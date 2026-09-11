@@ -1,4 +1,7 @@
+export type EmbedProvider = 'openai' | 'huggingface'
+
 export type EmbedSettings = {
+  provider: EmbedProvider
   apiBase: string
   apiKey: string
   model: string
@@ -11,15 +14,76 @@ function looksLikeChatModel(model: string): boolean {
   return /chat|flash|instruct|gpt-|claude|qwen.*max|glm-|deepseek|gemini|turbo/i.test(m)
 }
 
+function flattenHfEmbedding(raw: unknown): number[] {
+  if (!Array.isArray(raw) || raw.length === 0) return []
+  // feature-extraction may return number[] or number[][] (token vectors)
+  if (typeof raw[0] === 'number') return raw as number[]
+  const rows = raw as number[][]
+  const dim = rows[0]?.length ?? 0
+  if (!dim) return []
+  const out = new Array(dim).fill(0)
+  for (const row of rows) {
+    for (let i = 0; i < dim; i++) out[i] += row[i] || 0
+  }
+  for (let i = 0; i < dim; i++) out[i] /= rows.length
+  return out
+}
+
+async function embedViaHuggingFace(
+  texts: string[],
+  settings: EmbedSettings,
+): Promise<number[][]> {
+  const root = (settings.apiBase || 'https://router.huggingface.co/hf-inference').replace(
+    /\/+$/,
+    '',
+  )
+  const model = settings.model || 'BAAI/bge-small-zh-v1.5'
+  const url = `${root}/models/${model}/pipeline/feature-extraction`
+  const out: number[][] = []
+  for (const text of texts) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${settings.apiKey}`,
+      },
+      body: JSON.stringify({ inputs: text }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      let hint = ''
+      if (res.status === 401 || res.status === 403) {
+        hint = '。请确认 Hugging Face Read Token 有效。'
+      } else if (res.status === 404) {
+        hint = '。请确认模型 ID（如 BAAI/bge-small-zh-v1.5）在 Inference 可用。'
+      } else if (res.status === 503) {
+        hint = '。模型正在加载，稍后重试。'
+      }
+      throw new Error(`embed HF HTTP ${res.status}: ${body.slice(0, 180)}${hint}`)
+    }
+    const json = await res.json()
+    const vec = flattenHfEmbedding(json)
+    if (!vec.length) {
+      throw new Error('embed HF: empty embedding vector')
+    }
+    out.push(vec)
+  }
+  return out
+}
+
 export async function embedTexts(
   texts: string[],
   settings: EmbedSettings,
 ): Promise<number[][]> {
   const cleaned = texts.map((t) => (t ?? '').trim()).filter((t) => t.length > 0)
   if (!cleaned.length) return []
+
+  if ((settings.provider || 'openai') === 'huggingface') {
+    return embedViaHuggingFace(cleaned, settings)
+  }
+
   const base = settings.apiBase.replace(/\/$/, '')
   const url = `${base}/embeddings`
-  // Many gateways accept string for single input; arrays can be rejected as empty.
   const input: string | string[] = cleaned.length === 1 ? cleaned[0]! : cleaned
   const res = await fetch(url, {
     method: 'POST',

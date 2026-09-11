@@ -21,6 +21,7 @@ import {
   setSecret,
   getSecret,
   normalizeEmbedApiBase,
+  HF_INFERENCE_BASE,
 } from '../services/settings'
 import {
   listBookmarks,
@@ -238,6 +239,7 @@ export function registerIpc(ctx: AppContext): void {
     return {
       theme,
       embed: {
+        provider: embed.provider,
         apiBase: embed.apiBase,
         model: embed.model,
         hasApiKey: !!embed.apiKey,
@@ -254,14 +256,38 @@ export function registerIpc(ctx: AppContext): void {
       setSetting(db, 'ui.theme', payload.theme)
     }
     if (payload?.embed) {
+      if (typeof payload.embed.provider === 'string') {
+        const p = String(payload.embed.provider).toLowerCase()
+        const provider = p === 'huggingface' || p === 'hf' ? 'huggingface' : 'openai'
+        setSetting(db, 'embed.provider', provider)
+        if (provider === 'huggingface') {
+          const cur = getSetting(db, 'embed.apiBase') || ''
+          if (!cur || /siliconflow|openai|\/v1$/i.test(cur)) {
+            setSetting(db, 'embed.apiBase', HF_INFERENCE_BASE)
+          }
+          const model = getSetting(db, 'embed.model') || ''
+          if (!model || ((/bge-m3|gpt-|glm-|qwen/i.test(model) && !/bge-small/i.test(model)))) {
+            setSetting(db, 'embed.model', 'BAAI/bge-small-zh-v1.5')
+          }
+        }
+      }
       if (typeof payload.embed.apiBase === 'string') {
         const raw = payload.embed.apiBase.trim()
-        const normalized = normalizeEmbedApiBase(raw)
-        const rawStripped = raw.replace(/\/+$/, '')
-        if (normalized !== rawStripped) {
-          embedWarning = `已自动规范化 Base 为 ${normalized || '(空)'}（请填写 …/v1，勿带 /chat/completions、/completions 或 /embeddings）`
+        const providerNow = (
+          getSetting(db, 'embed.provider') ||
+          (typeof payload.embed.provider === 'string' ? payload.embed.provider : 'openai')
+        ).toLowerCase()
+        const isHf = providerNow === 'huggingface' || providerNow === 'hf'
+        if (isHf) {
+          setSetting(db, 'embed.apiBase', (raw || HF_INFERENCE_BASE).replace(/\/+$/, ''))
+        } else {
+          const normalized = normalizeEmbedApiBase(raw)
+          const rawStripped = raw.replace(/\/+$/, '')
+          if (normalized !== rawStripped) {
+            embedWarning = `已自动规范化 Base 为 ${normalized || '(空)'}（请填写 …/v1，勿带 /chat/completions、/completions 或 /embeddings）`
+          }
+          setSetting(db, 'embed.apiBase', normalized)
         }
-        setSetting(db, 'embed.apiBase', normalized)
       }
       if (typeof payload.embed.model === 'string') {
         setSetting(db, 'embed.model', payload.embed.model)

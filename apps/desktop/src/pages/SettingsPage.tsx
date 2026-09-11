@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 
 type Theme = 'dark' | 'light'
+type EmbedProvider = 'openai' | 'huggingface'
 
 type Props = {
   theme: Theme
   onThemeChange: (theme: Theme) => void
 }
 
+const HF_BASE = 'https://router.huggingface.co/hf-inference'
+
 export default function SettingsPage({ theme, onThemeChange }: Props) {
+  const [provider, setProvider] = useState<EmbedProvider>('openai')
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('')
@@ -20,6 +24,8 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
 
   useEffect(() => {
     void window.api.settingsGet().then((s) => {
+      const p = (s.embed.provider === 'huggingface' ? 'huggingface' : 'openai') as EmbedProvider
+      setProvider(p)
       setApiBase(s.embed.apiBase)
       setModel(s.embed.model)
       setHasKey(!!s.embed.hasApiKey)
@@ -30,9 +36,23 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
     })
   }, [])
 
+  function switchProvider(next: EmbedProvider) {
+    setProvider(next)
+    if (next === 'huggingface') {
+      setApiBase(HF_BASE)
+      if (!model || /siliconflow|bge-m3|gpt-|glm-|qwen/i.test(model)) {
+        setModel('BAAI/bge-small-zh-v1.5')
+      }
+    } else if (!apiBase || apiBase.includes('huggingface')) {
+      setApiBase('https://api.siliconflow.cn/v1')
+      if (!model || /bge-small/i.test(model)) setModel('BAAI/bge-m3')
+    }
+  }
+
   async function save() {
     const res = (await window.api.settingsSet({
       embed: {
+        provider,
         apiBase,
         model,
         apiKey: apiKey.startsWith('••') ? undefined : apiKey,
@@ -41,7 +61,9 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
     setMsg('已保存')
     setEmbedWarning(res?.embedWarning || '')
     const s = await window.api.settingsGet()
+    setProvider(s.embed.provider === 'huggingface' ? 'huggingface' : 'openai')
     setApiBase(s.embed.apiBase)
+    setModel(s.embed.model)
     setHasKey(!!s.embed.hasApiKey)
     setApiKey(s.embed.apiKey || '')
   }
@@ -73,7 +95,8 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       <div>
         <h2 className="text-lg font-semibold">设置</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-          外观与 Embedding API（OpenAI 兼容）。Key 经 Electron safeStorage 加密存储。
+          外观与 Embedding。支持 OpenAI 兼容网关或 Hugging Face Inference。Key 经
+          Electron safeStorage 加密存储。
         </p>
       </div>
 
@@ -113,27 +136,53 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       )}
 
       <div className="kd-card flex flex-col gap-4 p-4">
+        <div className="space-y-1.5 text-sm">
+          <span style={{ color: 'var(--text-muted)' }}>提供商</span>
+          <div className="kd-seg self-start" role="group" aria-label="嵌入提供商">
+            <button
+              type="button"
+              aria-pressed={provider === 'openai'}
+              onClick={() => switchProvider('openai')}
+            >
+              OpenAI 兼容
+            </button>
+            <button
+              type="button"
+              aria-pressed={provider === 'huggingface'}
+              onClick={() => switchProvider('huggingface')}
+            >
+              Hugging Face
+            </button>
+          </div>
+        </div>
+
         <label className="block space-y-1.5 text-sm">
           <span style={{ color: 'var(--text-muted)' }}>API Base</span>
           <input
             className="kd-input"
             value={apiBase}
             onChange={(e) => setApiBase(e.target.value)}
-            placeholder="https://api.siliconflow.cn/v1"
+            placeholder={
+              provider === 'huggingface' ? HF_BASE : 'https://api.siliconflow.cn/v1'
+            }
+            disabled={provider === 'huggingface'}
           />
           <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-            填写 OpenAI 兼容根路径，例如 https://api.siliconflow.cn/v1（不要带
-            /chat/completions、/completions 或 /embeddings；保存时会自动去掉多余后缀）。
+            {provider === 'huggingface'
+              ? 'Hugging Face 使用固定推理路由（feature-extraction），无需改 Base。'
+              : '填写 OpenAI 兼容根路径，例如 https://api.siliconflow.cn/v1（不要带 /chat/completions）。'}
           </span>
         </label>
         <label className="block space-y-1.5 text-sm">
-          <span style={{ color: 'var(--text-muted)' }}>API Key</span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            {provider === 'huggingface' ? 'HF Token' : 'API Key'}
+          </span>
           <input
             type="password"
             className="kd-input"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={hasKey ? '已保存（输入新值可覆盖）' : 'sk-…'}
+            placeholder={hasKey ? '已保存（输入新值可覆盖）' : provider === 'huggingface' ? 'hf_…' : 'sk-…'}
           />
         </label>
         <label className="block space-y-1.5 text-sm">
@@ -142,11 +191,14 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             className="kd-input"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="BAAI/bge-m3"
+            placeholder={
+              provider === 'huggingface' ? 'BAAI/bge-small-zh-v1.5' : 'BAAI/bge-m3'
+            }
           />
           <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-            须填 embedding 模型 ID（常含 embed / bge），不要填对话模型（如 glm-*-flash /
-            qwen*-chat）。
+            {provider === 'huggingface'
+              ? '推荐 BAAI/bge-small-zh-v1.5（中文）或 BAAI/bge-small-en-v1.5（英文），dim≈384。'
+              : '须填 embedding 模型 ID（常含 embed / bge），不要填对话模型。'}
           </span>
         </label>
 
@@ -173,7 +225,10 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
         {vectorReady ? (
           <div
             className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
-            style={{ background: 'color-mix(in srgb, var(--success) 14%, transparent)', color: 'var(--success)' }}
+            style={{
+              background: 'color-mix(in srgb, var(--success) 14%, transparent)',
+              color: 'var(--success)',
+            }}
           >
             <span aria-hidden>●</span>
             <span>嵌入已通 · dim={lastDim}，向量检索可用</span>
@@ -223,9 +278,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             className="kd-btn kd-btn-ghost"
             onClick={() =>
               void window.api.backupImport({ conflict: 'skip' }).then((r) => {
-                setMsg(
-                  r.canceled ? '已取消' : `导入 ${r.imported}，跳过 ${r.skipped}`,
-                )
+                setMsg(r.canceled ? '已取消' : `导入 ${r.imported}，跳过 ${r.skipped}`)
                 setEmbedWarning('')
               })
             }
@@ -243,7 +296,9 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       {msg && (
         <p
           className="text-xs"
-          style={{ color: /失败|错误|error|HTTP\s*\d/i.test(msg) ? 'var(--danger)' : 'var(--success)' }}
+          style={{
+            color: /失败|错误|error|HTTP\s*\d/i.test(msg) ? 'var(--danger)' : 'var(--success)',
+          }}
         >
           {msg}
         </p>

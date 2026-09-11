@@ -77,12 +77,26 @@ export function normalizeEmbedApiBase(raw: string): string {
   return base
 }
 
+export type EmbedProvider = 'openai' | 'huggingface'
+
+export const HF_INFERENCE_BASE = 'https://router.huggingface.co/hf-inference'
+
 export function getEmbedSettings(db: Db) {
+  const providerRaw = (getSetting(db, 'embed.provider') || 'openai').toLowerCase()
+  const provider: EmbedProvider =
+    providerRaw === 'huggingface' || providerRaw === 'hf' ? 'huggingface' : 'openai'
+  const defaultBase =
+    provider === 'huggingface' ? HF_INFERENCE_BASE : 'https://api.siliconflow.cn/v1'
+  const defaultModel =
+    provider === 'huggingface' ? 'BAAI/bge-small-zh-v1.5' : 'BAAI/bge-m3'
+  const rawBase = getSetting(db, 'embed.apiBase') || defaultBase
   return {
-    apiBase: normalizeEmbedApiBase(
-      getSetting(db, 'embed.apiBase') || 'https://api.siliconflow.cn/v1',
-    ),
+    provider,
+    apiBase:
+      provider === 'huggingface'
+        ? (rawBase || HF_INFERENCE_BASE).replace(/\/+$/, '')
+        : normalizeEmbedApiBase(rawBase),
     apiKey: getSecret(db, 'embed.apiKey') || '',
-    model: getSetting(db, 'embed.model') || 'BAAI/bge-m3',
+    model: getSetting(db, 'embed.model') || defaultModel,
   }
 }

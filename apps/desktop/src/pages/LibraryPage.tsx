@@ -122,6 +122,16 @@ export default function LibraryPage({
     onModalExternalConsumed?.()
   }, [modalExternal, onModalExternalConsumed])
 
+  // Esc closes detail (not while edit modal open)
+  useEffect(() => {
+    if (!selected || modalOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelected(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected, modalOpen])
+
   // Search while typing
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -209,12 +219,31 @@ export default function LibraryPage({
         })
         onToast?.('已保存')
       }
+      const editedId = modalDraft.id
       setModalOpen(false)
       setModalDraft({ title: '', body: '', tags: '' })
       await loadTop()
+      if (editedId && selected?.id === editedId) {
+        const full = (await window.api.knowledgeGet({ id: editedId })) as Item | null
+        if (full) setSelected(full)
+      }
       if (showingSearch) {
-        // refresh search hits
-        setQuery((q) => q)
+        const q = query.trim()
+        if (q) {
+          try {
+            const res = await window.api.knowledgeSearch({ query: q, topK: 20 })
+            setSearchHits(
+              res.items.map((h: any) => ({
+                id: h.id,
+                title: h.title,
+                snippet: h.snippet || '',
+                score: h.score,
+              })),
+            )
+          } catch {
+            /* keep old hits */
+          }
+        }
       }
     } catch (err) {
       onToast?.(`失败: ${(err as Error).message}`)
@@ -338,10 +367,10 @@ export default function LibraryPage({
                 <button
                   type="button"
                   onClick={() => void openDetail(it.id)}
-                  className="kd-card flex w-full items-start gap-3 px-3.5 py-3 text-left transition hover:brightness-110"
+                  className="kd-card flex w-full items-start gap-2 px-3.5 py-3 text-left transition hover:brightness-110"
                 >
                   <span
-                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-semibold"
+                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold"
                     style={{
                       background: (it.home_pin || 0) > 0 ? 'var(--accent-bg)' : 'var(--surface)',
                       color: (it.home_pin || 0) > 0 ? 'var(--accent-soft)' : 'var(--text-muted)',
@@ -406,17 +435,26 @@ export default function LibraryPage({
                 <button
                   type="button"
                   onClick={() => void openDetail(h.id)}
-                  className="kd-card w-full px-3.5 py-3 text-left transition hover:brightness-110"
+                  className="kd-card flex w-full items-start gap-2 px-3.5 py-3 text-left transition hover:brightness-110"
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{h.title || '无标题'}</span>
-                  </div>
-                  <p
-                    className="mt-1 line-clamp-2 text-xs leading-relaxed"
-                    style={{ color: 'var(--text-muted)' }}
+                  <span
+                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px]"
+                    style={{ background: 'var(--surface)', color: 'var(--text-muted)' }}
+                    aria-hidden
                   >
-                    {h.snippet}
-                  </p>
+                    ⌕
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{h.title || '无标题'}</span>
+                    </div>
+                    <p
+                      className="mt-1 line-clamp-2 text-xs leading-relaxed"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {h.snippet}
+                    </p>
+                  </div>
                 </button>
                 {hoverId === h.id && (
                   <div
@@ -492,12 +530,19 @@ export default function LibraryPage({
         }}
       />
 
-      {/* Detail drawer */}
+      {/* Detail drawer: right rail + clickable mask */}
       {selected && (
-        <div className="absolute inset-0 z-20 flex justify-end bg-black/40 backdrop-blur-[2px]">
+        <div className="absolute inset-0 z-20 flex">
+          <button
+            type="button"
+            className="min-w-0 flex-1 cursor-default border-0 bg-black/40 backdrop-blur-[2px]"
+            aria-label="关闭详情"
+            onClick={() => setSelected(null)}
+          />
           <div
-            className="flex h-full w-full max-w-lg flex-col overflow-hidden p-5"
-            style={{ background: 'var(--surface)' }}
+            className="flex h-full w-full max-w-[460px] flex-col overflow-hidden p-5 shadow-xl"
+            style={{ background: 'var(--surface)', width: 'min(100%, 460px)' }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
