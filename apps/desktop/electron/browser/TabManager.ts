@@ -25,6 +25,7 @@ type LiveTab = {
 const MAX_AWAKE = 6
 const SLEEP_MS = 5 * 60 * 1000
 const PARTITION = 'persist:workbench'
+export const MAX_SIDEBAR_PINS = 10
 
 export class TabManager {
   private live = new Map<string, LiveTab>()
@@ -55,27 +56,59 @@ export class TabManager {
   }
 
   list(): TabDto[] {
-    return (this.db.prepare(`SELECT * FROM browser_tabs ORDER BY sort_order ASC`).all() as any[]).map(
-      mapRow,
-    )
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM browser_tabs ORDER BY pinned DESC, sort_order ASC, updated_at DESC`,
+        )
+        .all() as any[]
+    ).map(mapRow)
   }
 
-  create(input: { url?: string; pinned?: boolean } = {}): TabDto {
+  listPinned(): TabDto[] {
+    return (
+      this.db
+        .prepare(`SELECT * FROM browser_tabs WHERE pinned=1 ORDER BY sort_order ASC`)
+        .all() as any[]
+    ).map(mapRow)
+  }
+
+  create(input: { url?: string; pinned?: boolean; title?: string } = {}): TabDto {
     const id = randomUUID()
     const url = normalizeUrl(input.url || 'https://www.google.com')
     const now = Date.now()
+    const wantPin = !!input.pinned
+
+    if (wantPin) {
+      const count = (
+        this.db.prepare(`SELECT COUNT(*) AS c FROM browser_tabs WHERE pinned=1`).get() as {
+          c: number
+        }
+      ).c
+      if (count >= MAX_SIDEBAR_PINS) {
+        throw new Error('最多钉选 10 个')
+      }
+    }
+
     const max = (
       this.db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM browser_tabs`).get() as {
         m: number
       }
     ).m
+    const pinMax = (
+      this.db
+        .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM browser_tabs WHERE pinned=1`)
+        .get() as { m: number }
+    ).m
+    const sortOrder = wantPin ? pinMax + 1 : max + 1
+
     this.db.prepare(`UPDATE browser_tabs SET active=0`).run()
     this.db
       .prepare(
         `INSERT INTO browser_tabs(id, title, url, favicon, sort_order, active, pinned, sleeping, updated_at)
          VALUES (?, ?, ?, NULL, ?, 1, ?, 0, ?)`,
       )
-      .run(id, url, url, max + 1, input.pinned ? 1 : 0, now)
+      .run(id, input.title ?? url, url, sortOrder, wantPin ? 1 : 0, now)
     void this.wake(id, url)
     this.emitUpdated(id)
     return this.get(id)!
@@ -86,12 +119,44 @@ export class TabManager {
     return row ? mapRow(row) : null
   }
 
+  setPinned(id: string, pinned: boolean): TabDto {
+    const row = this.getRow(id)
+    if (!row) throw new Error('标签不存在')
+
+    if (pinned) {
+      if (row.pinned) return mapRow(row)
+      const count = (
+        this.db.prepare(`SELECT COUNT(*) AS c FROM browser_tabs WHERE pinned=1`).get() as {
+          c: number
+        }
+      ).c
+      if (count >= MAX_SIDEBAR_PINS) {
+        throw new Error('最多钉选 10 个')
+      }
+      const pinMax = (
+        this.db
+          .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM browser_tabs WHERE pinned=1`)
+          .get() as { m: number }
+      ).m
+      this.db
+        .prepare(`UPDATE browser_tabs SET pinned=1, sort_order=?, updated_at=? WHERE id=?`)
+        .run(pinMax + 1, Date.now(), id)
+    } else {
+      if (!row.pinned) return mapRow(row)
+      this.db
+        .prepare(`UPDATE browser_tabs SET pinned=0, updated_at=? WHERE id=?`)
+        .run(Date.now(), id)
+    }
+    this.emitUpdated(id)
+    return this.get(id)!
+  }
+
   close(id: string): boolean {
     this.sleep(id, true)
     const info = this.db.prepare(`DELETE FROM browser_tabs WHERE id=?`).run(id)
     if (info.changes === 0) return false
     const next = this.db
-      .prepare(`SELECT id FROM browser_tabs ORDER BY sort_order DESC LIMIT 1`)
+      .prepare(`SELECT id FROM browser_tabs ORDER BY pinned DESC, sort_order DESC LIMIT 1`)
       .get() as { id: string } | undefined
     if (next) void this.activate(next.id)
     return true
@@ -205,6 +270,14 @@ export class TabManager {
       this.db
         .prepare(`UPDATE browser_tabs SET title=?, updated_at=? WHERE id=?`)
         .run(title, Date.now(), id)
+      this.emitUpdated(id)
+    })
+    view.webContents.on('page-favicon-updated', (_e, favicons) => {
+      const fav = favicons?.[0]
+      if (!fav) return
+      this.db
+        .prepare(`UPDATE browser_tabs SET favicon=?, updated_at=? WHERE id=?`)
+        .run(fav, Date.now(), id)
       this.emitUpdated(id)
     })
     view.webContents.on('did-navigate', (_e, navigatedUrl) => {
@@ -324,4 +397,3 @@ function normalizeUrl(raw: string): string {
   if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(t)) return `https://${t}`
   return `https://www.google.com/search?q=${encodeURIComponent(t)}`
 }
-

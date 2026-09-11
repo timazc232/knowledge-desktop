@@ -42,6 +42,8 @@ const api = {
   tabsSetBounds: (payload: unknown) => ipcRenderer.invoke('tabs:setBounds', payload),
   tabsHide: () => ipcRenderer.invoke('tabs:hide'),
   tabsShow: () => ipcRenderer.invoke('tabs:show'),
+  tabsSetPinned: (payload: unknown) => ipcRenderer.invoke('tabs:setPinned', payload),
+  tabsListPinned: () => ipcRenderer.invoke('tabs:listPinned'),
   onTabUpdated: (cb: (ev: unknown) => void): Unsub => {
     const listener = (_: IpcRendererEvent, data: unknown) => cb(data)
     ipcRenderer.on('tabs:onUpdated', listener)

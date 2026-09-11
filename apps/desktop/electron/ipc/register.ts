@@ -149,6 +149,15 @@ export function registerIpc(ctx: AppContext): void {
   ipcMain.handle('tabs:show', async () => {
     tabs.showActive()
   })
+  ipcMain.handle('tabs:setPinned', async (_e, payload) => {
+    try {
+      const tab = tabs.setPinned(payload.id, !!payload.pinned)
+      return { ok: true as const, tab }
+    } catch (err) {
+      return { ok: false as const, error: (err as Error).message || String(err) }
+    }
+  })
+  ipcMain.handle('tabs:listPinned', async () => tabs.listPinned())
 
   // --- Bookmarks ---
   ipcMain.handle('bookmarks:list', async () => listBookmarks(db))
