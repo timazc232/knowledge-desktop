@@ -136,8 +136,8 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             placeholder="BAAI/bge-m3"
           />
           <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
-            使用 Embedding 模型名（如 BAAI/bge-m3），不要填对话模型（如 deepseek-chat /
-            gpt-4o）。
+            须填 embedding 模型 ID（常含 embed / bge），不要填对话模型（如 glm-*-flash /
+            qwen*-chat）。
           </span>
         </label>
 
@@ -215,7 +215,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       {msg && (
         <p
           className="text-xs"
-          style={{ color: msg.startsWith('失败') ? 'var(--danger)' : 'var(--success)' }}
+          style={{ color: /失败|错误|error|HTTP\s*\d/i.test(msg) ? 'var(--danger)' : 'var(--success)' }}
         >
           {msg}
         </p>
