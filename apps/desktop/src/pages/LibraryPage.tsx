@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import KnowledgeEditModal, {
+  parseTags,
+  tagsToString,
+  type KnowledgeEditDraft,
+} from '../components/KnowledgeEditModal'
 
 type Item = {
   id: string
@@ -7,201 +12,442 @@ type Item = {
   source_type: string
   embed_status: string
   created_at: number
+  updated_at: number
   source_url: string | null
+  tags_json?: string
   snippet?: string
+  score?: number
+  open_count?: number
+  last_opened_at?: number | null
+  home_pin?: number
+}
+
+type SearchHit = {
+  id: string
+  title: string | null
+  snippet: string
   score?: number
 }
 
 type Props = {
-  openItemId?: string | null
-  onOpenItemConsumed?: () => void
-  expandComposeSignal?: number
+  refreshSignal?: number
+  onToast?: (msg: string) => void
+  onGoAll?: () => void
+  modalExternal?: KnowledgeEditDraft | null
+  onModalExternalConsumed?: () => void
+}
+
+function formatRelative(ts: number | null | undefined): string {
+  if (!ts) return '未打开'
+  const diff = Date.now() - ts
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`
+  return new Date(ts).toLocaleDateString()
+}
+
+function snippetOf(it: Item): string {
+  if (it.snippet) return it.snippet
+  try {
+    const tags = JSON.parse(it.tags_json || '[]') as string[]
+    if (Array.isArray(tags) && tags.length) return tags.join(' · ')
+  } catch {
+    /* ignore */
+  }
+  return (it.body || '').replace(/\s+/g, ' ').slice(0, 80)
 }
 
 export default function LibraryPage({
-  openItemId,
-  onOpenItemConsumed,
-  expandComposeSignal = 0,
+  refreshSignal = 0,
+  onToast,
+  onGoAll,
+  modalExternal,
+  onModalExternalConsumed,
 }: Props) {
-  const [body, setBody] = useState('')
-  const [title, setTitle] = useState('')
-  const [showTitle, setShowTitle] = useState(false)
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [items, setItems] = useState<Item[]>([])
-  const [selected, setSelected] = useState<Item | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState('')
+  const [query, setQuery] = useState('')
+  const [topItems, setTopItems] = useState<Item[]>([])
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hoverId, setHoverId] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
-  const composeCardRef = useRef<HTMLDivElement>(null)
+  const [selected, setSelected] = useState<Item | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalDraft, setModalDraft] = useState<KnowledgeEditDraft>({
+    title: '',
+    body: '',
+    tags: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const loadRecent = useCallback(async () => {
+  const loadTop = useCallback(async () => {
     setLoading(true)
     try {
-      const list = (await window.api.knowledgeList({ limit: 40 })) as Item[]
-      setItems(list)
+      const list = (await window.api.knowledgeListTop({ limit: 10 })) as Item[]
+      setTopItems(list)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void loadRecent()
+    void loadTop()
     const unsub = window.api.onIngestProgress(() => {
-      void loadRecent()
+      void loadTop()
     })
     return unsub
-  }, [loadRecent])
+  }, [loadTop])
 
   useEffect(() => {
-    if (expandComposeSignal > 0) {
-      setComposeOpen(true)
-      requestAnimationFrame(() => bodyRef.current?.focus())
+    if (refreshSignal > 0) void loadTop()
+  }, [refreshSignal, loadTop])
+
+  // ⌘K / Ctrl+K focuses THIS search bar
+  useEffect(() => {
+    function onFocusSearch() {
+      searchRef.current?.focus()
+      searchRef.current?.select()
     }
-  }, [expandComposeSignal])
+    window.addEventListener('kd:focus-search', onFocusSearch)
+    return () => window.removeEventListener('kd:focus-search', onFocusSearch)
+  }, [])
 
+  // External modal (clip / App-level new) — if parent routes clip here
   useEffect(() => {
-    if (!openItemId) return
-    void (async () => {
-      const full = (await window.api.knowledgeGet({ id: openItemId })) as Item | null
-      if (full) setSelected(full)
-      onOpenItemConsumed?.()
-    })()
-  }, [openItemId, onOpenItemConsumed])
+    if (!modalExternal) return
+    setModalDraft(modalExternal)
+    setModalOpen(true)
+    onModalExternalConsumed?.()
+  }, [modalExternal, onModalExternalConsumed])
 
+  // Search while typing
   useEffect(() => {
-    if (!composeOpen) return
-    function onDocMouseDown(e: MouseEvent) {
-      const el = composeCardRef.current
-      if (!el) return
-      if (!el.contains(e.target as Node) && !body.trim() && !title.trim()) {
-        setComposeOpen(false)
-        setShowTitle(false)
-      }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = query.trim()
+    if (!q) {
+      setSearchHits([])
+      setSearchLoading(false)
+      return
     }
-    document.addEventListener('mousedown', onDocMouseDown)
-    return () => document.removeEventListener('mousedown', onDocMouseDown)
-  }, [composeOpen, body, title])
+    setSearchLoading(true)
+    debounceRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await window.api.knowledgeSearch({ query: q, topK: 20 })
+          setSearchHits(
+            res.items.map((h: any) => ({
+              id: h.id,
+              title: h.title,
+              snippet: h.snippet || '',
+              score: h.score,
+            })),
+          )
+        } catch {
+          setSearchHits([])
+        } finally {
+          setSearchLoading(false)
+        }
+      })()
+    }, 180)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [query])
 
-  async function save() {
-    if (!body.trim()) {
-      setStatus('请输入内容')
+  const showingSearch = query.trim().length > 0
+  const cmdHint = useMemo(
+    () => (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'),
+    [],
+  )
+
+  function openCreate() {
+    setModalDraft({ title: '', body: '', tags: '' })
+    setModalOpen(true)
+  }
+
+  function openEdit(it: Item) {
+    setModalDraft({
+      id: it.id,
+      title: it.title || '',
+      body: it.body || '',
+      tags: tagsToString(it.tags_json),
+    })
+    setModalOpen(true)
+  }
+
+  async function openDetail(id: string) {
+    await window.api.knowledgeRecordOpen?.({ id })
+    const full = (await window.api.knowledgeGet({ id })) as Item | null
+    if (full) setSelected(full)
+    void loadTop()
+  }
+
+  async function saveModal() {
+    if (!modalDraft.body.trim()) {
+      onToast?.('请输入内容')
       return
     }
     setSaving(true)
     try {
-      const item = await window.api.knowledgeCreate({
-        title: title.trim() || undefined,
-        body,
-        source_type: 'manual',
-      })
-      setStatus(`已保存 · ${item.id.slice(0, 8)}…`)
-      setBody('')
-      setTitle('')
-      setShowTitle(false)
-      setComposeOpen(false)
-      await loadRecent()
+      const tags = parseTags(modalDraft.tags)
+      if (modalDraft.id) {
+        await window.api.knowledgeUpdate({
+          id: modalDraft.id,
+          title: modalDraft.title.trim() || undefined,
+          body: modalDraft.body,
+          tags,
+        })
+        onToast?.('已更新')
+      } else {
+        await window.api.knowledgeCreate({
+          title: modalDraft.title.trim() || undefined,
+          body: modalDraft.body,
+          source_type: 'manual',
+          tags,
+        })
+        onToast?.('已保存')
+      }
+      setModalOpen(false)
+      setModalDraft({ title: '', body: '', tags: '' })
+      await loadTop()
+      if (showingSearch) {
+        // refresh search hits
+        setQuery((q) => q)
+      }
     } catch (err) {
-      setStatus(`失败: ${(err as Error).message}`)
+      onToast?.(`失败: ${(err as Error).message}`)
     } finally {
       setSaving(false)
-      setTimeout(() => setStatus(''), 2500)
     }
-  }
-
-  async function openDetail(id: string) {
-    const full = (await window.api.knowledgeGet({ id })) as Item | null
-    if (full) setSelected(full)
   }
 
   async function remove(id: string) {
     if (!confirm('确认删除这条知识？')) return
     await window.api.knowledgeDelete({ id })
     if (selected?.id === id) setSelected(null)
-    await loadRecent()
+    await loadTop()
   }
 
   async function copyItem(it: Item) {
     const text = [it.title, it.body].filter(Boolean).join('\n\n')
     try {
       await navigator.clipboard.writeText(text || it.body || '')
-      setCopiedId(it.id)
-      setTimeout(() => setCopiedId(null), 1500)
+      onToast?.('已复制')
     } catch {
-      setStatus('复制失败')
-      setTimeout(() => setStatus(''), 2000)
+      onToast?.('复制失败')
     }
   }
 
-  function openCompose() {
-    setComposeOpen(true)
-    requestAnimationFrame(() => bodyRef.current?.focus())
+  async function togglePin(it: Item) {
+    const cur = it.home_pin || 0
+    if (cur > 0) {
+      await window.api.knowledgeSetHomePin({ id: it.id, pin: 0 })
+      onToast?.('已取消常用置顶')
+    } else {
+      // assign next free slot 1..3
+      const used = new Set(topItems.filter((x) => (x.home_pin || 0) > 0).map((x) => x.home_pin!))
+      let slot = 1
+      while (slot <= 3 && used.has(slot)) slot++
+      if (slot > 3) slot = 1
+      await window.api.knowledgeSetHomePin({ id: it.id, pin: slot })
+      onToast?.(`已置顶 #${slot}`)
+    }
+    await loadTop()
+    if (selected?.id === it.id) {
+      const full = (await window.api.knowledgeGet({ id: it.id })) as Item | null
+      if (full) setSelected(full)
+    }
   }
 
   return (
     <div className="relative mx-auto flex h-full max-w-3xl flex-col overflow-hidden px-6 pb-4 pt-5">
-      {/* Recent list — default main area */}
+      {/* Top: search + actions */}
+      <div className="mb-4 flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <span
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            ⌕
+          </span>
+          <input
+            ref={searchRef}
+            className="kd-input w-full !py-2.5 pl-9 pr-16 text-sm"
+            placeholder="搜索知识…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && query) {
+                e.preventDefault()
+                setQuery('')
+              }
+            }}
+          />
+          <kbd
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded px-1.5 py-0.5 text-[10px]"
+            style={{ background: 'var(--control-bg)', color: 'var(--text-muted)' }}
+          >
+            {cmdHint}
+          </kbd>
+        </div>
+        <button type="button" className="kd-btn kd-btn-primary shrink-0" onClick={openCreate}>
+          + 新建
+        </button>
+        <button
+          type="button"
+          className="kd-btn kd-btn-ghost shrink-0"
+          onClick={() => onGoAll?.()}
+        >
+          全部知识
+        </button>
+      </div>
+
+      {/* Main: Top10 or search results */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
         <div className="flex items-center justify-between px-0.5">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-            最近{loading ? ' · …' : ''}
+            {showingSearch
+              ? searchLoading
+                ? '搜索中…'
+                : `搜索结果 · ${searchHits.length}`
+              : `常用 Top10${loading ? ' · …' : ''}`}
           </span>
-          <span className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
-            {items.length} 条
-          </span>
+          {!showingSearch && (
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+              置顶 &gt; 打开次数 &gt; 最近打开
+            </span>
+          )}
         </div>
-        <ul className="min-h-0 flex-1 space-y-2 overflow-auto pr-1 pb-20">
-          {items.map((it) => (
-            <li
-              key={it.id}
-              className="group relative"
-              onMouseEnter={() => setHoverId(it.id)}
-              onMouseLeave={() => setHoverId(null)}
-            >
-              <button
-                type="button"
-                onClick={() => void openDetail(it.id)}
-                className="kd-card w-full px-3.5 py-3 text-left transition hover:brightness-110"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm font-medium">{it.title || '无标题'}</span>
-                  <span className="shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    {it.source_type}
-                  </span>
-                </div>
-                <p
-                  className="mt-1 line-clamp-2 text-xs leading-relaxed"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {it.snippet || it.body}
-                </p>
-              </button>
-              {(hoverId === it.id || copiedId === it.id) && (
-                <div
-                  className="absolute right-2 top-2 flex gap-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
-                    onClick={() => void openDetail(it.id)}
-                  >
-                    打开
-                  </button>
-                  <button
-                    type="button"
-                    className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
-                    onClick={() => void copyItem(it)}
-                  >
-                    {copiedId === it.id ? '已复制' : '复制'}
-                  </button>
-                </div>
-              )}
+
+        <ul className="min-h-0 flex-1 space-y-1.5 overflow-auto pr-1">
+          {showingSearch && searchLoading && searchHits.length === 0 && (
+            <li className="px-3 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+              正在搜索…
             </li>
-          ))}
-          {!loading && items.length === 0 && (
+          )}
+          {!showingSearch &&
+            topItems.map((it, idx) => (
+              <li
+                key={it.id}
+                className="group relative"
+                onMouseEnter={() => setHoverId(it.id)}
+                onMouseLeave={() => setHoverId(null)}
+              >
+                <button
+                  type="button"
+                  onClick={() => void openDetail(it.id)}
+                  className="kd-card flex w-full items-start gap-3 px-3.5 py-3 text-left transition hover:brightness-110"
+                >
+                  <span
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-semibold"
+                    style={{
+                      background: (it.home_pin || 0) > 0 ? 'var(--accent-bg)' : 'var(--surface)',
+                      color: (it.home_pin || 0) > 0 ? 'var(--accent-soft)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {(it.home_pin || 0) > 0 ? '📌' : idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{it.title || '无标题'}</span>
+                      <span className="shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {it.open_count ?? 0} 次 · {formatRelative(it.last_opened_at)}
+                      </span>
+                    </div>
+                    <p
+                      className="mt-1 line-clamp-2 text-xs leading-relaxed"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {snippetOf(it)}
+                    </p>
+                  </div>
+                </button>
+                {hoverId === it.id && (
+                  <div
+                    className="absolute right-2 top-2 flex gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
+                      onClick={() => void openDetail(it.id)}
+                    >
+                      打开
+                    </button>
+                    <button
+                      type="button"
+                      className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
+                      onClick={() => void openEdit(it)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
+                      onClick={() => void copyItem(it)}
+                    >
+                      复制
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+
+          {showingSearch &&
+            searchHits.map((h) => (
+              <li
+                key={h.id}
+                className="group relative"
+                onMouseEnter={() => setHoverId(h.id)}
+                onMouseLeave={() => setHoverId(null)}
+              >
+                <button
+                  type="button"
+                  onClick={() => void openDetail(h.id)}
+                  className="kd-card w-full px-3.5 py-3 text-left transition hover:brightness-110"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm font-medium">{h.title || '无标题'}</span>
+                  </div>
+                  <p
+                    className="mt-1 line-clamp-2 text-xs leading-relaxed"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {h.snippet}
+                  </p>
+                </button>
+                {hoverId === h.id && (
+                  <div
+                    className="absolute right-2 top-2 flex gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
+                      onClick={() => void openDetail(h.id)}
+                    >
+                      打开
+                    </button>
+                    <button
+                      type="button"
+                      className="kd-btn kd-btn-ghost !px-2 !py-1 text-[11px]"
+                      onClick={() => {
+                        void (async () => {
+                          const full = (await window.api.knowledgeGet({ id: h.id })) as Item | null
+                          if (full) openEdit(full)
+                        })()
+                      }}
+                    >
+                      编辑
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+
+          {!loading && !showingSearch && topItems.length === 0 && (
             <li
               className="kd-card flex flex-col items-center gap-3 px-6 py-10 text-center"
               style={{ color: 'var(--text-muted)' }}
@@ -210,119 +456,41 @@ export default function LibraryPage({
                 还没有知识条目
               </p>
               <p className="text-xs leading-relaxed">
-                按{' '}
-                <kbd className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--surface)' }}>
-                  Ctrl+N
-                </kbd>{' '}
-                快速录入，或{' '}
-                <kbd className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--surface)' }}>
+                点击「+ 新建」，或用{' '}
+                <kbd
+                  className="rounded px-1.5 py-0.5 text-[10px]"
+                  style={{ background: 'var(--surface)' }}
+                >
                   Ctrl+Shift+S
                 </kbd>{' '}
                 从剪贴板快录。
-                <br />
-                用{' '}
-                <kbd className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--surface)' }}>
-                  Ctrl+K
-                </kbd>{' '}
-                搜索知识与钉选。
               </p>
-              <button type="button" className="kd-btn kd-btn-primary mt-1" onClick={openCompose}>
-                + 快速录入
+              <button type="button" className="kd-btn kd-btn-primary mt-1" onClick={openCreate}>
+                + 新建
               </button>
+            </li>
+          )}
+
+          {showingSearch && !searchLoading && searchHits.length === 0 && (
+            <li className="px-3 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+              无匹配结果
             </li>
           )}
         </ul>
       </div>
 
-      {/* Bottom compose bar / expanded card */}
-      <div className="absolute inset-x-0 bottom-0 z-10 px-6 pb-4 pt-2" style={{ background: 'linear-gradient(transparent, var(--bg) 28%)' }}>
-        {!composeOpen ? (
-          <button
-            type="button"
-            onClick={openCompose}
-            className="kd-card flex w-full items-center gap-2 px-4 py-3 text-left text-sm transition hover:brightness-110"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <span
-              className="flex h-6 w-6 items-center justify-center rounded-lg text-sm"
-              style={{ background: 'var(--accent-bg)', color: 'var(--accent-soft)' }}
-            >
-              +
-            </span>
-            快速录入
-            <span className="ml-auto text-[10px] opacity-60">Ctrl+N</span>
-          </button>
-        ) : (
-          <div ref={composeCardRef} className="kd-card flex flex-col gap-3 p-4 shadow-lg">
-            {showTitle ? (
-              <input
-                className="kd-input"
-                placeholder="标题（可选）"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                autoFocus
-              />
-            ) : (
-              <button
-                type="button"
-                className="self-start text-xs"
-                style={{ color: 'var(--text-muted)' }}
-                onClick={() => setShowTitle(true)}
-              >
-                + 添加标题
-              </button>
-            )}
-            <textarea
-              ref={bodyRef}
-              className="kd-input min-h-[120px] resize-y leading-relaxed"
-              placeholder="粘贴或输入内容，保存入库…"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                  e.preventDefault()
-                  void save()
-                }
-                if (e.key === 'Escape' && !body.trim() && !title.trim()) {
-                  setComposeOpen(false)
-                }
-              }}
-            />
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="kd-btn kd-btn-primary"
-                disabled={saving}
-                onClick={() => void save()}
-              >
-                {saving ? '保存中…' : '保存'}
-              </button>
-              <button
-                type="button"
-                className="kd-btn kd-btn-ghost"
-                onClick={() => {
-                  if (!body.trim() && !title.trim()) {
-                    setComposeOpen(false)
-                    setShowTitle(false)
-                  } else if (confirm('放弃当前内容？')) {
-                    setBody('')
-                    setTitle('')
-                    setShowTitle(false)
-                    setComposeOpen(false)
-                  }
-                }}
-              >
-                取消
-              </button>
-              {status && (
-                <span className="text-xs" style={{ color: 'var(--success)' }}>
-                  {status}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      <KnowledgeEditModal
+        open={modalOpen}
+        draft={modalDraft}
+        saving={saving}
+        heading={modalDraft.id ? '编辑知识' : '新建知识'}
+        onChange={setModalDraft}
+        onSave={() => void saveModal()}
+        onCancel={() => {
+          if (saving) return
+          setModalOpen(false)
+        }}
+      />
 
       {/* Detail drawer */}
       {selected && (
@@ -336,6 +504,9 @@ export default function LibraryPage({
                 <h3 className="text-lg font-semibold">{selected.title || '无标题'}</h3>
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                   {selected.source_type} · {selected.embed_status}
+                  {(selected.open_count ?? 0) > 0
+                    ? ` · ${selected.open_count} 次打开`
+                    : ''}
                   {selected.source_url ? ` · ${selected.source_url}` : ''}
                 </p>
               </div>
@@ -347,7 +518,30 @@ export default function LibraryPage({
                 关闭
               </button>
             </div>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="kd-btn kd-btn-ghost"
+                onClick={() => {
+                  openEdit(selected)
+                }}
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                className="kd-btn kd-btn-ghost"
+                onClick={() => void togglePin(selected)}
+              >
+                {(selected.home_pin || 0) > 0 ? '取消置顶' : '常用置顶'}
+              </button>
+              <button
+                type="button"
+                className="kd-btn kd-btn-ghost"
+                onClick={() => void copyItem(selected)}
+              >
+                复制
+              </button>
               <button
                 type="button"
                 className="kd-btn kd-btn-ghost"

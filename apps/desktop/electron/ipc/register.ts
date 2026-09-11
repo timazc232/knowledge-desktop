@@ -9,6 +9,9 @@ import {
   deleteItem,
   getItem,
   listItems,
+  listTop,
+  recordOpen,
+  setHomePin,
 } from '../services/knowledge'
 import { hybridSearch } from '../services/search'
 import {
@@ -99,6 +102,20 @@ export function registerIpc(ctx: AppContext): void {
     return queue.retry(payload?.id)
   })
 
+  ipcMain.handle('knowledge:listTop', async (_e, payload) =>
+    listTop(db, payload?.limit ?? 10),
+  )
+
+  ipcMain.handle('knowledge:recordOpen', async (_e, payload) => {
+    if (!payload?.id) return null
+    return recordOpen(db, payload.id)
+  })
+
+  ipcMain.handle('knowledge:setHomePin', async (_e, payload) => {
+    if (!payload?.id) return null
+    return setHomePin(db, payload.id, Number(payload.pin ?? 0))
+  })
+
   // --- Clip ---
   ipcMain.handle('clip:fromSelection', async (_e, payload) => {
     const item = createItem(db, {
@@ -122,6 +139,8 @@ export function registerIpc(ctx: AppContext): void {
     queue.enqueue(item.id)
     return { ok: true, item }
   })
+
+  ipcMain.handle('clip:readText', async () => ({ text: clipboard.readText() || '' }))
 
   // --- Tabs ---
   ipcMain.handle('tabs:list', async () => tabs.list())

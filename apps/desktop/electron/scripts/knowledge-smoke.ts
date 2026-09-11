@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../db/index.js'
-import { createItem, listItems, deleteItem, getItem } from '../services/knowledge.js'
+import { createItem, listItems, deleteItem, getItem, listTop, recordOpen, setHomePin } from '../services/knowledge.js'
 import { chunkText } from '../ingest/chunker.js'
 import { createVectorBackend } from '../ingest/vector-backend.js'
 import { hybridSearch } from '../services/search.js'
@@ -53,6 +53,15 @@ async function main() {
   console.log('[smoke] import', imp)
 
   console.log('[smoke] list', listItems(db).length)
+
+  const opened = recordOpen(db, item.id)
+  console.log('[smoke] recordOpen count', opened?.open_count, 'last', opened?.last_opened_at)
+  setHomePin(db, item.id, 1)
+  const top = listTop(db, 10)
+  console.log('[smoke] listTop', top.length, 'pin', top[0]?.home_pin, 'opens', top[0]?.open_count)
+  if (!top.length || top[0].id !== item.id) throw new Error('listTop did not return pinned item first')
+  if ((opened?.open_count ?? 0) < 1) throw new Error('recordOpen did not increment')
+
   deleteItem(db, item.id)
   await vectors.close()
   db.close()

@@ -35,8 +35,13 @@ export class TabManager {
   private win: BrowserWindow | null = null
   /** Only true while Browser page is mounted; keeps WebContentsViews off Library/Settings. */
   private browserVisible = false
+  private clipShortcutHandler: (() => void) | null = null
 
   constructor(private db: Db) {}
+
+  setClipShortcutHandler(handler: () => void): void {
+    this.clipShortcutHandler = handler
+  }
 
   attachWindow(win: BrowserWindow): void {
     this.win = win
@@ -300,6 +305,14 @@ export class TabManager {
         .prepare(`UPDATE browser_tabs SET url=?, updated_at=? WHERE id=?`)
         .run(navigatedUrl, Date.now(), id)
       this.emitUpdated(id)
+    })
+    view.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      const key = (input.key || '').toLowerCase()
+      if (key !== 's') return
+      if (!((input.control || input.meta) && input.shift && !input.alt)) return
+      event.preventDefault()
+      this.clipShortcutHandler?.()
     })
     view.webContents.on('context-menu', (_e, params) => {
       if (params.selectionText?.trim()) {

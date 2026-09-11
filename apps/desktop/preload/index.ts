@@ -12,6 +12,12 @@ const api = {
   knowledgeGet: (payload: unknown) => ipcRenderer.invoke('knowledge:get', payload),
   knowledgeList: (payload?: unknown) => ipcRenderer.invoke('knowledge:list', payload ?? {}),
   knowledgeSearch: (payload: unknown) => ipcRenderer.invoke('knowledge:search', payload),
+  knowledgeListTop: (payload?: unknown) =>
+    ipcRenderer.invoke('knowledge:listTop', payload ?? {}),
+  knowledgeRecordOpen: (payload: unknown) =>
+    ipcRenderer.invoke('knowledge:recordOpen', payload),
+  knowledgeSetHomePin: (payload: unknown) =>
+    ipcRenderer.invoke('knowledge:setHomePin', payload),
   knowledgeRetryEmbed: (payload: unknown) =>
     ipcRenderer.invoke('knowledge:retryEmbed', payload),
   onIngestProgress: (cb: (ev: unknown) => void): Unsub => {
@@ -24,10 +30,16 @@ const api = {
   clipFromSelection: (payload: unknown) =>
     ipcRenderer.invoke('clip:fromSelection', payload),
   clipFromClipboard: () => ipcRenderer.invoke('clip:fromClipboard', {}),
+  clipReadText: () => ipcRenderer.invoke('clip:readText') as Promise<{ text: string }>,
   onClipDialog: (cb: (ev: unknown) => void): Unsub => {
     const listener = (_: IpcRendererEvent, data: unknown) => cb(data)
     ipcRenderer.on('clip:showDialog', listener)
     return () => ipcRenderer.removeListener('clip:showDialog', listener)
+  },
+  onClipShortcutStatus: (cb: (ev: unknown) => void): Unsub => {
+    const listener = (_: IpcRendererEvent, data: unknown) => cb(data)
+    ipcRenderer.on('clip:shortcutStatus', listener)
+    return () => ipcRenderer.removeListener('clip:shortcutStatus', listener)
   },
 
   // Tabs

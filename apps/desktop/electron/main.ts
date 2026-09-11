@@ -21,6 +21,37 @@ let db: Db
 let vectors: VectorBackend | null = null
 let queue: IngestQueue
 let tabs: TabManager
+let clipShortcutRegistered = false
+
+function openClipDialogFromClipboard() {
+  const text = clipboard.readText()
+  if (!text?.trim()) {
+    mainWindow?.webContents.send('clip:showDialog', { text: '', empty: true })
+    return
+  }
+  mainWindow?.webContents.send('clip:showDialog', { text })
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+}
+
+function isClipShortcut(input: Electron.Input): boolean {
+  if (input.type !== 'keyDown') return false
+  const key = (input.key || '').toLowerCase()
+  if (key !== 's') return false
+  // Ctrl+Shift+S or Cmd+Shift+S
+  const mod = input.control || input.meta
+  return !!(mod && input.shift && !input.alt)
+}
+
+function attachLocalClipShortcut(win: BrowserWindow) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!isClipShortcut(input)) return
+    event.preventDefault()
+    openClipDialogFromClipboard()
+  })
+}
 
 function createWindow() {
   const theme = getSetting(db, 'ui.theme') === 'light' ? 'light' : 'dark'
@@ -40,6 +71,16 @@ function createWindow() {
   tabs.attachWindow(win)
   // Keep WebContentsViews hidden until Browser page mounts and calls tabsShow
   tabs.hideAll()
+  attachLocalClipShortcut(win)
+
+  win.webContents.on('did-finish-load', () => {
+    if (!clipShortcutRegistered) {
+      win.webContents.send('clip:shortcutStatus', {
+        registered: false,
+        message: '全局快录快捷键注册失败，窗口内 Ctrl+Shift+S 与侧栏「快录」仍可用',
+      })
+    }
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -89,6 +130,8 @@ app.whenReady().then(async () => {
     },
   )
   tabs = new TabManager(db)
+  // Tab views: local shortcut when browser page focused
+  tabs.setClipShortcutHandler(openClipDialogFromClipboard)
 
   registerIpc({
     db,
@@ -102,19 +145,12 @@ app.whenReady().then(async () => {
   })
 
   // Global clip shortcut: show in-app dialog only (do not auto-save)
-  const ok = globalShortcut.register('CommandOrControl+Shift+S', () => {
-    const text = clipboard.readText()
-    if (!text?.trim()) {
-      mainWindow?.webContents.send('clip:showDialog', { text: '', empty: true })
-      return
-    }
-    mainWindow?.webContents.send('clip:showDialog', { text })
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
+  clipShortcutRegistered = globalShortcut.register('CommandOrControl+Shift+S', () => {
+    openClipDialogFromClipboard()
   })
-  if (!ok) console.warn('[main] failed to register Ctrl+Shift+S')
+  if (!clipShortcutRegistered) {
+    console.warn('[main] failed to register Ctrl+Shift+S — local before-input-event still active')
+  }
 
   createWindow()
 
