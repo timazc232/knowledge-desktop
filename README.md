@@ -8,11 +8,12 @@
 
 | 文档 | 说明 |
 |------|------|
-| [docs/完整方案.md](docs/完整方案.md) | 产品与架构完整方案 v1.2 |
+| [docs/完整方案.md](docs/完整方案.md) | 产品与架构完整方案 v1.3 |
 | [docs/仓库目录.md](docs/仓库目录.md) | 目标代码结构 |
 | [docs/schema.sql](docs/schema.sql) | SQLite 表结构 |
 | [docs/ipc.md](docs/ipc.md) | IPC 与本地快录 API |
 | [docs/backup-format.md](docs/backup-format.md) | 导入导出 `knowledge-backup-v1` |
+| [docs/技术评审.md](docs/技术评审.md) | 实施前完整技术评审与里程碑重切 |
 
 ## 技术选型（摘要）
 

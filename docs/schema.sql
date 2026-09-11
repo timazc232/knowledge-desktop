@@ -132,3 +132,9 @@ CREATE TABLE IF NOT EXISTS export_history (
 INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%s','now') * 1000);
 
 -- Default bookmarks seeded by app, not SQL, so locales can vary.
+
+-- Vector DDL is backend-specific (created in migration after smoke test):
+-- sqlite-vec example:
+--   CREATE VIRTUAL TABLE chunk_embeddings USING vec0(embedding float[1024]);
+--   STORE chunk_id mapping via chunk_vector_ref.backend_ref = rowid or vec id
+-- lance: vectors live under userData/lance/; chunk_vector_ref.backend_ref = lance row id
