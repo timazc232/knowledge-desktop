@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Favicon from '../components/Favicon'
 
 type Tab = {
   id: string
   title: string | null
   url: string
+  favicon: string | null
   active: boolean
   sleeping: boolean
   pinned: boolean
@@ -11,10 +13,21 @@ type Tab = {
 
 type Bookmark = { id: string; title: string; url: string }
 
-export default function BrowserPage() {
+type Props = {
+  onPinsChange?: () => void | Promise<void>
+}
+
+function shortTitle(t: Tab): string {
+  const raw = (t.title || t.url || '').trim()
+  if (raw.length <= 18) return raw
+  return raw.slice(0, 16) + '…'
+}
+
+export default function BrowserPage({ onPinsChange }: Props) {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [address, setAddress] = useState('')
+  const [pinMsg, setPinMsg] = useState('')
   const viewportRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
@@ -48,7 +61,6 @@ export default function BrowserPage() {
       }
       setTabs(list)
       void window.api.tabsShow()
-      // delay for layout
       requestAnimationFrame(() => sendBounds())
     })()
 
@@ -58,7 +70,7 @@ export default function BrowserPage() {
         const i = prev.findIndex((x) => x.id === t.id)
         if (i < 0) return [...prev, t]
         const next = [...prev]
-        next[i] = t
+        next[i] = { ...next[i], ...t }
         return next
       })
       if (t.active) setAddress(t.url)
@@ -92,52 +104,97 @@ export default function BrowserPage() {
     await refresh()
   }
 
+  async function togglePin(tab: Tab) {
+    const res = await window.api.tabsSetPinned({ id: tab.id, pinned: !tab.pinned })
+    if (!res.ok) {
+      setPinMsg(res.error || '钉选失败')
+      setTimeout(() => setPinMsg(''), 2500)
+      return
+    }
+    setPinMsg(tab.pinned ? '已取消钉选' : '已钉到侧栏')
+    setTimeout(() => setPinMsg(''), 1800)
+    await refresh()
+    await onPinsChange?.()
+  }
+
   return (
     <div className="flex h-full flex-col">
-      {/* bookmarks bar */}
-      <div className="flex gap-1 overflow-x-auto border-b border-white/10 px-2 py-1">
-        {bookmarks.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            className="shrink-0 rounded px-2 py-1 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-            onClick={() =>
-              void (async () => {
-                if (active) {
-                  await window.api.tabsNavigate({ id: active.id, url: b.url })
-                } else {
-                  await window.api.tabsCreate({ url: b.url })
-                }
-                await refresh()
-                sendBounds()
-              })()
-            }
-          >
-            {b.title}
-          </button>
-        ))}
-      </div>
+      {/* slim bookmark chips */}
+      {bookmarks.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-1.5">
+          {bookmarks.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              className="shrink-0 rounded-full px-2.5 py-1 text-[11px] transition"
+              style={{
+                background: 'var(--surface)',
+                color: 'var(--text-muted)',
+              }}
+              onClick={() =>
+                void (async () => {
+                  if (active) {
+                    await window.api.tabsNavigate({ id: active.id, url: b.url })
+                  } else {
+                    await window.api.tabsCreate({ url: b.url })
+                  }
+                  await refresh()
+                  sendBounds()
+                })()
+              }
+            >
+              {b.title}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* tab strip */}
-      <div className="flex items-center gap-1 border-b border-white/10 bg-[#12151c] px-1 py-1">
+      <div
+        className="flex items-center gap-1 px-2 py-1"
+        style={{ background: 'var(--surface)' }}
+      >
         <div className="flex flex-1 gap-0.5 overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => void activate(t.id)}
-              className={`group flex max-w-[180px] items-center gap-1 rounded-t px-2 py-1.5 text-xs ${
-                t.active ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'
-              }`}
+              className="group flex max-w-[160px] items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition"
+              style={{
+                background: t.active ? 'var(--card)' : 'transparent',
+                color: t.active ? 'var(--text)' : 'var(--text-muted)',
+              }}
             >
+              <Favicon url={t.url} favicon={t.favicon} title={t.title} size={14} />
               <span className="truncate">
-                {t.sleeping ? '💤 ' : ''}
-                {t.title || t.url}
+                {t.sleeping ? '· ' : ''}
+                {shortTitle(t)}
               </span>
               <span
                 role="button"
                 tabIndex={0}
-                className="ml-1 hidden rounded px-1 text-white/40 hover:bg-white/20 group-hover:inline"
+                title={t.pinned ? '取消钉选' : '钉到侧栏'}
+                className="ml-0.5 rounded px-0.5 opacity-0 transition group-hover:opacity-100"
+                style={{ color: t.pinned ? 'var(--accent-soft)' : 'var(--text-muted)' }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void togglePin(t)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.stopPropagation()
+                    void togglePin(t)
+                  }
+                }}
+              >
+                📌
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="rounded px-1 opacity-0 group-hover:opacity-100"
+                style={{ color: 'var(--text-muted)' }}
                 onClick={(e) => {
                   e.stopPropagation()
                   void window.api.tabsClose({ id: t.id }).then(refresh)
@@ -156,7 +213,7 @@ export default function BrowserPage() {
         </div>
         <button
           type="button"
-          className="rounded px-2 py-1 text-sm text-white/60 hover:bg-white/10"
+          className="kd-btn kd-btn-ghost !px-2 !py-1 text-sm"
           onClick={() =>
             void window.api.tabsCreate({}).then(() => {
               void refresh()
@@ -169,52 +226,65 @@ export default function BrowserPage() {
       </div>
 
       {/* address bar */}
-      <div className="flex items-center gap-1 border-b border-white/10 px-2 py-1.5">
+      <div className="flex items-center gap-1.5 px-2 py-1.5">
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-white/50 hover:bg-white/10"
+          className="kd-btn kd-btn-ghost !px-2 !py-1 text-xs"
           onClick={() => active && void window.api.tabsBack({ id: active.id })}
         >
           ←
         </button>
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-white/50 hover:bg-white/10"
+          className="kd-btn kd-btn-ghost !px-2 !py-1 text-xs"
           onClick={() => active && void window.api.tabsForward({ id: active.id })}
         >
           →
         </button>
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-white/50 hover:bg-white/10"
+          className="kd-btn kd-btn-ghost !px-2 !py-1 text-xs"
           onClick={() => active && void window.api.tabsReload({ id: active.id })}
         >
           ↻
         </button>
         <input
-          className="flex-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 font-mono text-xs outline-none focus:border-emerald-500/40"
+          className="kd-input flex-1 !py-1.5 font-mono text-xs"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void navigate()
           }}
         />
-        <button
-          type="button"
-          className="rounded bg-emerald-700/80 px-3 py-1 text-xs text-white hover:bg-emerald-600"
-          onClick={() => void navigate()}
-        >
-          前往
-        </button>
+        {active && (
+          <button
+            type="button"
+            className="kd-btn kd-btn-ghost whitespace-nowrap text-xs"
+            style={{
+              color: active.pinned ? 'var(--accent-soft)' : undefined,
+            }}
+            onClick={() => void togglePin(active)}
+          >
+            {active.pinned ? '已钉选' : '钉到侧栏'}
+          </button>
+        )}
+        {pinMsg && (
+          <span className="text-[11px]" style={{ color: 'var(--accent-soft)' }}>
+            {pinMsg}
+          </span>
+        )}
       </div>
 
-      {/* WebContentsView hosts here — leave empty placeholder */}
       <div
         id="browser-viewport"
         ref={viewportRef}
-        className="relative min-h-0 flex-1 bg-[#0a0c10]"
+        className="relative min-h-0 flex-1"
+        style={{ background: '#050506' }}
       >
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-white/20">
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs"
+          style={{ color: 'var(--text-muted)', opacity: 0.35 }}
+        >
           浏览器视图由主进程 WebContentsView 渲染
         </div>
       </div>

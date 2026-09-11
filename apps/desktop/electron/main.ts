@@ -11,7 +11,7 @@ import { createVectorBackend, type VectorBackend } from './ingest/vector-backend
 import { IngestQueue } from './ingest/queue'
 import { TabManager } from './browser/TabManager'
 import { registerIpc } from './ipc/register'
-import { seedBookmarksOnce } from './services/bookmarks'
+import { seedBookmarksOnce, seedPinnedTabsOnce } from './services/bookmarks'
 import { createItem } from './services/knowledge'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -26,7 +26,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#0f1115',
+    backgroundColor: '#0b0b0d',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -56,6 +56,7 @@ app.whenReady().then(async () => {
   console.log('[main] db ready at', dbPath)
 
   seedBookmarksOnce(db)
+  seedPinnedTabsOnce(db)
 
   const dimRow = db.prepare(`SELECT value FROM vector_meta WHERE key='dim'`).get() as
     | { value: string }

@@ -26,6 +26,8 @@ interface DesktopApi {
   tabsSetBounds: (payload: unknown) => Promise<void>
   tabsHide: () => Promise<void>
   tabsShow: () => Promise<void>
+  tabsSetPinned: (payload: unknown) => Promise<{ ok: boolean; tab?: any; error?: string }>
+  tabsListPinned: () => Promise<any[]>
   onTabUpdated: (cb: (ev: unknown) => void) => Unsub
   bookmarksList: () => Promise<any[]>
   bookmarksCreate: (payload: unknown) => Promise<any>
