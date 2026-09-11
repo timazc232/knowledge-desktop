@@ -1,0 +1,14 @@
+{
+  "name": "knowledge-desktop",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @knowledge-desktop/desktop dev",
+    "build": "pnpm --filter @knowledge-desktop/desktop build",
+    "db:smoke": "pnpm --filter @knowledge-desktop/desktop db:smoke",
+    "vector:smoke": "pnpm --filter @knowledge-desktop/desktop vector:smoke"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
