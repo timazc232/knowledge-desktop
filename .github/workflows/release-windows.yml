@@ -1,0 +1,94 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create/update a GitHub Release draft with the installer'
+        type: boolean
+        default: true
+      tag:
+        description: 'Tag to release as (e.g. v0.1.0). Empty = use package version.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @knowledge-desktop/desktop electron:rebuild
+
+      - name: Build Windows NSIS installer
+        run: pnpm --filter @knowledge-desktop/desktop build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: apps/desktop/dist/*-setup.exe
+          if-no-files-found: error
+
+      - name: Resolve tag
+        if: github.event_name == 'push' || inputs.create_release
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            VER=$(node -p "require('./apps/desktop/package.json').version")
+            TAG="v${VER}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          ls -la apps/desktop/dist/*-setup.exe
+
+      - name: Publish GitHub Release (draft on dispatch, published on tag)
+        if: github.event_name == 'push' || inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Knowledge Desktop ${{ steps.meta.outputs.tag }}
+          draft: ${{ github.event_name != 'push' }}
+          generate_release_notes: true
+          body: |
+            ## Windows 安装包
+            - 下载 `Knowledge Desktop-*-setup.exe` 安装即可
+            - 向量检索需配置 OpenAI 兼容 `/v1` + **embedding** 模型（对话模型不可用）
+            - 未配置 embedding 时全文搜索仍可用
+
+            ## 已知限制
+            - 浏览器扩展快录、本地离线 embedding 尚未包含
+          files: apps/desktop/dist/*-setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
