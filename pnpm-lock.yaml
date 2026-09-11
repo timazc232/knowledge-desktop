@@ -31,6 +31,10 @@ importers:
       uuid:
         specifier: ^11.1.1
         version: 11.1.1
+    optionalDependencies:
+      sqlite-vec-windows-x64:
+        specifier: 0.1.9
+        version: 0.1.9
     devDependencies:
       '@electron/rebuild':
         specifier: ^4.2.0
