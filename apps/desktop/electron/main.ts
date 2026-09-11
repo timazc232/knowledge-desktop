@@ -1,45 +1,135 @@
-import { app, BrowserWindow } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  clipboard,
+} from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openDatabase } from './db/index'
+import { openDatabase, type Db } from './db/index'
+import { createVectorBackend, type VectorBackend } from './ingest/vector-backend'
+import { IngestQueue } from './ingest/queue'
+import { TabManager } from './browser/TabManager'
+import { registerIpc } from './ipc/register'
+import { seedBookmarksOnce } from './services/bookmarks'
+import { createItem } from './services/knowledge'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+let mainWindow: BrowserWindow | null = null
+let db: Db
+let vectors: VectorBackend | null = null
+let queue: IngestQueue
+let tabs: TabManager
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1400,
+    height: 900,
+    backgroundColor: '#0f1115',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   })
+
+  mainWindow = win
+  tabs.attachWindow(win)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  win.on('closed', () => {
+    tabs.destroyAll()
+    if (mainWindow === win) mainWindow = null
+  })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath('userData'), 'knowledge.sqlite')
+  db = openDatabase(dbPath)
+  console.log('[main] db ready at', dbPath)
+
+  seedBookmarksOnce(db)
+
+  const dimRow = db.prepare(`SELECT value FROM vector_meta WHERE key='dim'`).get() as
+    | { value: string }
+    | undefined
+  const dim = dimRow ? Number(dimRow.value) : 1024
+
   try {
-    const db = openDatabase(dbPath)
+    vectors = await createVectorBackend({ dim, db, dbPath })
     db.prepare(
-      `INSERT OR REPLACE INTO vector_meta(key, value) VALUES ('schema_ok', ?)`,
-    ).run('1')
-    console.log('[main] db ready at', dbPath)
+      `INSERT INTO vector_meta(key, value) VALUES('backend', ?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).run(vectors.name)
+    db.prepare(
+      `INSERT INTO vector_meta(key, value) VALUES('dim', ?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    ).run(String(vectors.dim))
+    console.log('[main] vector backend=', vectors.name, 'dim=', vectors.dim)
   } catch (err) {
-    console.error('[main] db migrate failed', err)
+    console.error('[main] vector init failed', err)
   }
 
+  queue = new IngestQueue(
+    db,
+    () => vectors,
+    (v) => {
+      vectors = v
+    },
+  )
+  tabs = new TabManager(db)
+
+  registerIpc({
+    db,
+    getVectors: () => vectors,
+    setVectors: (v) => {
+      vectors = v
+    },
+    queue,
+    tabs,
+    getMainWindow: () => mainWindow,
+  })
+
+  // Global clip shortcut
+  const ok = globalShortcut.register('CommandOrControl+Shift+S', () => {
+    const text = clipboard.readText()
+    if (!text?.trim()) {
+      mainWindow?.webContents.send('clip:showDialog', { text: '', empty: true })
+      return
+    }
+    const item = createItem(db, { body: text, source_type: 'clipboard' })
+    queue.enqueue(item.id)
+    mainWindow?.webContents.send('clip:showDialog', {
+      text,
+      itemId: item.id,
+      saved: true,
+    })
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+  if (!ok) console.warn('[main] failed to register Ctrl+Shift+S')
+
   createWindow()
+
+  // Resume pending ingest
+  queue.retry(undefined, true)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
 
 app.on('window-all-closed', () => {

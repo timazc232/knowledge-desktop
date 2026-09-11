@@ -22,6 +22,9 @@ export function migrate(db: Db): void {
   // In packaged app, schema may sit next to compiled js — also try cwd-relative
   const candidates = [
     schemaPath,
+    path.join(__dirname, 'schema.sql'),
+    path.join(__dirname, 'db', 'schema.sql'),
+    path.join((process as NodeJS.Process & { resourcesPath?: string }).resourcesPath || '', 'schema.sql'),
     path.join(process.cwd(), 'electron/db/schema.sql'),
     path.join(process.cwd(), 'apps/desktop/electron/db/schema.sql'),
   ]
@@ -36,7 +39,11 @@ export function migrate(db: Db): void {
 }
 
 /** FTS retrieval joins via knowledge_items.rowid = fts.rowid (see tech review). */
-export function searchFts(db: Db, query: string, limit = 20) {
+export function searchFts(
+  db: Db,
+  query: string,
+  limit = 20,
+): { id: string; title: string | null; body: string; source_url: string | null; created_at: number; rank: number }[] {
   const stmt = db.prepare(`
     SELECT ki.id, ki.title, ki.body, ki.source_url, ki.created_at,
            bm25(knowledge_items_fts) AS rank
@@ -46,5 +53,12 @@ export function searchFts(db: Db, query: string, limit = 20) {
     ORDER BY rank
     LIMIT ?
   `)
-  return stmt.all(query, limit)
+  return stmt.all(query, limit) as {
+    id: string
+    title: string | null
+    body: string
+    source_url: string | null
+    created_at: number
+    rank: number
+  }[]
 }
