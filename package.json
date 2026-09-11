@@ -9,7 +9,8 @@
     "db:smoke": "pnpm --filter @knowledge-desktop/desktop db:smoke",
     "vector:smoke": "pnpm --filter @knowledge-desktop/desktop vector:smoke",
     "knowledge:smoke": "pnpm --filter @knowledge-desktop/desktop knowledge:smoke",
-    "electron:rebuild": "pnpm --filter @knowledge-desktop/desktop electron:rebuild"
+    "electron:rebuild": "pnpm --filter @knowledge-desktop/desktop electron:rebuild",
+    "upgrade:smoke": "pnpm --filter @knowledge-desktop/desktop upgrade:smoke"
   },
   "engines": {
     "node": ">=20"

@@ -37,8 +37,6 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
 CREATE INDEX IF NOT EXISTS idx_items_created ON knowledge_items(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_items_embed ON knowledge_items(embed_status);
 CREATE INDEX IF NOT EXISTS idx_items_source_type ON knowledge_items(source_type);
-CREATE INDEX IF NOT EXISTS idx_items_home_pin ON knowledge_items(home_pin);
-CREATE INDEX IF NOT EXISTS idx_items_open_count ON knowledge_items(open_count DESC);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_items_fts USING fts5(
   title,

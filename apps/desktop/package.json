@@ -2,7 +2,7 @@
   "name": "@knowledge-desktop/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Knowledge Desktop — local KB + browser workbench",
+  "description": "Knowledge Desktop \u2014 local KB + browser workbench",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -12,7 +12,8 @@
     "vector:smoke": "tsx electron/ingest/vector-smoke.ts",
     "build:win": "pnpm build && electron-builder --win",
     "knowledge:smoke": "tsx electron/scripts/knowledge-smoke.ts",
-    "electron:rebuild": "electron-rebuild -f -w better-sqlite3"
+    "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
+    "upgrade:smoke": "tsx electron/scripts/upgrade-smoke.ts"
   },
   "dependencies": {
     "@knowledge-desktop/shared": "workspace:*",
