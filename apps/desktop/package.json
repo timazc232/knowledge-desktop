@@ -2,7 +2,7 @@
   "name": "@knowledge-desktop/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Knowledge Desktop \u2014 local KB + browser workbench",
+  "description": "Knowledge Desktop — local KB + browser workbench",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -10,10 +10,12 @@
     "preview": "electron-vite preview",
     "db:smoke": "tsx electron/db/smoke.ts",
     "vector:smoke": "tsx electron/ingest/vector-smoke.ts",
-    "build:win": "pnpm build && electron-builder --win",
+    "build:win": "pnpm build && electron-builder --win --config electron-builder.yml --publish never",
     "knowledge:smoke": "tsx electron/scripts/knowledge-smoke.ts",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
-    "upgrade:smoke": "tsx electron/scripts/upgrade-smoke.ts"
+    "upgrade:smoke": "tsx electron/scripts/upgrade-smoke.ts",
+    "build:win:dir": "pnpm build && electron-builder --win --dir --config electron-builder.yml --publish never",
+    "pack:config-check": "node scripts/check-win-packaging.mjs"
   },
   "dependencies": {
     "@knowledge-desktop/shared": "workspace:*",
@@ -41,26 +43,8 @@
     "typescript": "^5.7.3",
     "vite": "^6.1.0"
   },
-  "build": {
-    "appId": "com.knowledge.desktop",
-    "productName": "Knowledge Desktop",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "out/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "electron/db/schema.sql",
-        "to": "schema.sql"
-      }
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    }
+  "author": "Knowledge Desktop",
+  "optionalDependencies": {
+    "sqlite-vec-windows-x64": "0.1.9"
   }
 }

@@ -1,18 +1,54 @@
+# Windows NSIS packaging for Knowledge Desktop (Issue #13)
+# Build on a Windows host (or Linux with Wine):
+#   pnpm --filter @knowledge-desktop/desktop build:win
+# Output: apps/desktop/dist/Knowledge Desktop-<version>-setup.exe
+
 appId: com.knowledge.desktop
 productName: Knowledge Desktop
+copyright: Copyright © Knowledge Desktop
+
 directories:
   output: dist
   buildResources: build
+
+# electron-vite emits to out/; copy-assets places schema.sql under out/main/
 files:
   - out/**/*
   - package.json
-win:
-  target:
-    - nsis
-  artifactName: ${productName}-${version}-setup.${ext}
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+
+# schema.sql on the real filesystem (resourcesPath). Main also finds
+# out/main/schema.sql via __dirname after copy-assets (inside asar or unpacked).
 extraResources:
   - from: electron/db/schema.sql
     to: schema.sql
+
+asar: true
+# Native addons + sqlite-vec loadable extensions must not stay inside asar.
+asarUnpack:
+  - "**/*.node"
+  - "**/*.{dll,so,dylib}"
+  - "**/better-sqlite3/**"
+  - "**/sqlite-vec/**"
+  - "**/sqlite-vec-*/**"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-setup.${ext}
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Knowledge Desktop
+  installerLanguages:
+    - en_US
+    - zh_CN
+  displayLanguageSelector: false
+
+npmRebuild: true

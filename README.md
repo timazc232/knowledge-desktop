@@ -63,14 +63,23 @@ pnpm --filter @knowledge-desktop/desktop build
 # 或: pnpm build
 ```
 
-### 打包 / Package
+### 打包 / Package（Windows NSIS）
 
-`apps/desktop/electron-builder.yml` 已存在（NSIS 目标）。完整 Windows NSIS 安装包仍见 **Issue #13**。
+配置见 `apps/desktop/electron-builder.yml`（可改安装目录、桌面/开始菜单快捷方式；`schema.sql` 经 `extraResources` + `copy-assets` 打入包内；`better-sqlite3` / `sqlite-vec` 走 `asarUnpack`）。
 
 ```bash
-# 配置就绪后（Windows 宿主或 CI）:
+# 校验配置（任意 OS，不产出安装包）:
+pnpm --filter @knowledge-desktop/desktop pack:config-check
+
+# 产出 NSIS 安装包（需 Windows 宿主，或 Linux + Wine）:
 pnpm --filter @knowledge-desktop/desktop build:win
+# 产物: apps/desktop/dist/Knowledge Desktop-<version>-setup.exe
+
+# 仅解包目录（调试用，仍需 Windows 目标工具链）:
+pnpm --filter @knowledge-desktop/desktop build:win:dir
 ```
+
+> **Linux CI 说明**：本仓库的 Linux 环境通常没有 Wine，无法完成 NSIS 安装包链接（`spawn wine ENOENT`）。`electron-builder` 仍可校验配置并产出 `dist/win-unpacked/`（含 `Knowledge Desktop.exe` + `resources/schema.sql`），但 **完整 `*-setup.exe` 请在 Windows 10/11 上** 运行 `build:win`。务必在 Windows 宿主打包，以便装上 `sqlite-vec-windows-x64`（Linux 交叉打包会带错平台扩展）。未签名安装包可能触发 SmartScreen，属预期。
 
 ## Issues
 
