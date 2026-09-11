@@ -242,7 +242,8 @@ export class TabManager {
   }
 
   destroyAll(): void {
-    for (const id of [...this.live.keys()]) this.sleep(id, true)
+    for (const id of [...this.live.keys()]) this.sleep(id, true, true)
+    this.win = null
   }
 
   private getRow(id: string) {
@@ -321,12 +322,12 @@ export class TabManager {
     }
   }
 
-  private sleep(id: string, force = false): void {
+  private sleep(id: string, force = false, silent = false): void {
     const live = this.live.get(id)
     if (!live) return
     const row = this.getRow(id)
     if (!force && row?.pinned) return
-    if (this.win) {
+    if (this.win && !this.win.isDestroyed()) {
       try {
         this.win.contentView.removeChildView(live.view)
       } catch {
@@ -334,7 +335,9 @@ export class TabManager {
       }
     }
     try {
-      live.view.webContents.close()
+      if (!live.view.webContents.isDestroyed()) {
+        live.view.webContents.close()
+      }
     } catch {
       /* ignore */
     }
@@ -342,7 +345,7 @@ export class TabManager {
     this.db
       .prepare(`UPDATE browser_tabs SET sleeping=1, updated_at=? WHERE id=?`)
       .run(Date.now(), id)
-    this.emitUpdated(id)
+    if (!silent) this.emitUpdated(id)
   }
 
   private maybeSleepOthers(): void {
@@ -369,8 +372,13 @@ export class TabManager {
 
   private emitUpdated(id: string): void {
     const dto = this.get(id)
-    if (!dto || !this.win) return
-    this.win.webContents.send('tabs:onUpdated', dto)
+    const win = this.win
+    if (!dto || !win || win.isDestroyed() || win.webContents.isDestroyed()) return
+    try {
+      win.webContents.send('tabs:onUpdated', dto)
+    } catch {
+      /* window may be mid-destroy */
+    }
   }
 }
 
