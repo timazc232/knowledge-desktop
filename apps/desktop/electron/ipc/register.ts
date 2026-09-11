@@ -278,7 +278,7 @@ export function registerIpc(ctx: AppContext): void {
       return { ok: false, error: '未配置 API Key' }
     }
     try {
-      const [vec] = await embedTexts(['知识库嵌入冒烟测试'], settings)
+      const [vec] = await embedTexts(['knowledge-desktop embed smoke'], settings)
       const dim = vec?.length ?? 0
       setSetting(db, 'embed.lastTestDim', String(dim))
       // Ensure vector backend for this dim
