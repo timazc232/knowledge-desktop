@@ -3,9 +3,14 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// Workspace shared is raw ESM .ts — must be bundled, not require()'d at runtime.
+const externalize = externalizeDepsPlugin({
+  exclude: ['@knowledge-desktop/shared'],
+})
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalize],
     build: {
       rollupOptions: {
         input: {
@@ -16,7 +21,7 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalize],
     build: {
       rollupOptions: {
         input: {

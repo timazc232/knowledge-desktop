@@ -1,8 +1,10 @@
 # Knowledge Desktop（桌面知识库工作台）
 
-本地优先的 **知识库 + 内置浏览器工作台**（路线 A，MIT）。
+本地优先的 **知识库 + 内置浏览器工作台**（路线 A，MIT）。MVP core（PR #17）已合并。
 
-## 文档
+Local-first **knowledge base + in-app browser workbench**. MIT.
+
+## 文档 / Docs
 
 | 文档 | 说明 |
 |------|------|
@@ -13,18 +15,61 @@
 | [docs/ipc.md](docs/ipc.md) | IPC 与本地快录 API |
 | [docs/backup-format.md](docs/backup-format.md) | 导入导出 `knowledge-backup-v1` |
 
-## 开发（M0）
+## 快速开始 / Run
 
 需要 Node 20+ 与 [pnpm](https://pnpm.io)。
 
 ```bash
-pnpm install
-pnpm db:smoke        # SQLite + FTS 冒烟
-pnpm vector:smoke    # 向量后端冒烟（sqlite-vec → lance → memory）
-pnpm dev             # 打开 Electron 窗口
+git clone https://github.com/timazc232/knowledge-desktop.git
+cd knowledge-desktop
+pnpm i
+pnpm --filter @knowledge-desktop/desktop dev
+# 或根脚本: pnpm dev
 ```
 
-向量后端优先尝试 `sqlite-vec`，失败则 `@lancedb/lancedb`，再失败则内存后端（仅保证 M0 冒烟不阻塞）。
+### 设置嵌入 API / Embed settings
+
+打开 **设置**：配置 OpenAI-compatible Embedding API。
+
+- 默认：`https://api.siliconflow.cn/v1` + 模型 `BAAI/bge-m3`
+- 填入 API Key → **测试嵌入** → 成功后可自动补齐待嵌入条目
+- 未配置 Key 时仍可用关键词（FTS）搜索；向量检索不可用
+
+### 快捷键 / Hotkey
+
+- **Ctrl+Shift+S**（macOS: Cmd+Shift+S）：从系统剪贴板快录入库
+
+### 冒烟 / Smoke
+
+```bash
+pnpm --filter @knowledge-desktop/desktop knowledge:smoke
+# 或: pnpm knowledge:smoke
+```
+
+另有：`pnpm db:smoke`、`pnpm vector:smoke`。
+
+### 原生模块 / Native (Electron ABI)
+
+`better-sqlite3` 需针对当前运行时编译：
+
+- Node 冒烟（`knowledge:smoke` / `db:smoke`）：`pnpm rebuild better-sqlite3`
+- Electron 窗口：`pnpm electron:rebuild`（内部 `@electron/rebuild`）
+
+### 构建 / Build
+
+```bash
+pnpm --filter @knowledge-desktop/desktop build
+# 或: pnpm build
+```
+
+### 打包 / Package
+
+`apps/desktop/electron-builder.yml` 已存在（NSIS 目标）。完整 Windows NSIS 安装包仍见 **Issue #13**。
+
+```bash
+# 配置就绪后（Windows 宿主或 CI）:
+pnpm --filter @knowledge-desktop/desktop build:win
+```
 
 ## Issues
 

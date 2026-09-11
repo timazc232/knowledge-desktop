@@ -11,7 +11,8 @@
     "db:smoke": "tsx electron/db/smoke.ts",
     "vector:smoke": "tsx electron/ingest/vector-smoke.ts",
     "build:win": "pnpm build && electron-builder --win",
-    "knowledge:smoke": "tsx electron/scripts/knowledge-smoke.ts"
+    "knowledge:smoke": "tsx electron/scripts/knowledge-smoke.ts",
+    "electron:rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "@knowledge-desktop/shared": "workspace:*",
@@ -23,6 +24,7 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@tailwindcss/vite": "^4.0.9",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.20.2",

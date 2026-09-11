@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "pnpm --filter @knowledge-desktop/desktop dev",
     "build": "pnpm --filter @knowledge-desktop/desktop build",
+    "preview": "pnpm --filter @knowledge-desktop/desktop preview",
     "db:smoke": "pnpm --filter @knowledge-desktop/desktop db:smoke",
-    "vector:smoke": "pnpm --filter @knowledge-desktop/desktop vector:smoke"
+    "vector:smoke": "pnpm --filter @knowledge-desktop/desktop vector:smoke",
+    "knowledge:smoke": "pnpm --filter @knowledge-desktop/desktop knowledge:smoke",
+    "electron:rebuild": "pnpm --filter @knowledge-desktop/desktop electron:rebuild"
   },
   "engines": {
     "node": ">=20"

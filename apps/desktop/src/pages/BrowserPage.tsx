@@ -56,7 +56,7 @@ export default function BrowserPage() {
       const t = ev as Tab
       setTabs((prev) => {
         const i = prev.findIndex((x) => x.id === t.id)
-        if (i < 0) return prev
+        if (i < 0) return [...prev, t]
         const next = [...prev]
         next[i] = t
         return next

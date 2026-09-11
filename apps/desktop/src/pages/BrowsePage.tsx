@@ -15,8 +15,9 @@ export default function BrowsePage() {
   const [selected, setSelected] = useState<Item | null>(null)
 
   const refresh = useCallback(async () => {
-    const list = await window.api.knowledgeList({ limit: 100 })
-    setItems(list as Item[])
+    const list = (await window.api.knowledgeList({ limit: 100 })) as Item[]
+    setItems(list)
+    setSelected((cur) => (cur ? list.find((x) => x.id === cur.id) ?? null : null))
   }, [])
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function BrowsePage() {
           <>
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold">{selected.title}</h3>
+                <h3 className="text-lg font-semibold">{selected.title || '无标题'}</h3>
                 <p className="mt-1 text-xs text-white/40">
                   {selected.source_type} · {selected.embed_status}
                   {selected.source_url ? ` · ${selected.source_url}` : ''}

@@ -26,8 +26,10 @@ export default function App() {
       if (e.empty) setToast('剪贴板为空')
       else if (e.saved) setToast(`已从剪贴板入库 ${e.itemId?.slice(0, 8) ?? ''}…`)
       else if (e.text) {
-        void window.api.clipFromSelection({ text: e.text, url: (e as any).url, title: (e as any).title })
+        void window.api
+          .clipFromSelection({ text: e.text, url: (e as any).url, title: (e as any).title })
           .then((item) => setToast(`已快录 ${(item as any).id?.slice(0, 8)}…`))
+          .catch((err) => setToast(`快录失败: ${(err as Error).message || String(err)}`))
       }
       setTimeout(() => setToast(null), 3000)
     })

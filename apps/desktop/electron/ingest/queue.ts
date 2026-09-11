@@ -134,6 +134,12 @@ export class IngestQueue {
       this.db
         .prepare(`UPDATE ingest_jobs SET status='failed', last_error=?, updated_at=? WHERE id=?`)
         .run('item missing', Date.now(), jobId)
+      this.emit({
+        jobId,
+        itemId,
+        status: 'failed',
+        error: 'item missing',
+      })
       return
     }
 

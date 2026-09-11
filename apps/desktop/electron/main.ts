@@ -126,6 +126,9 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+}).catch((err) => {
+  console.error('[main] startup failed', err)
+  app.quit()
 })
 
 app.on('will-quit', () => {
