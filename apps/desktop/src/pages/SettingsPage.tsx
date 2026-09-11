@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 
-export default function SettingsPage() {
+type Theme = 'dark' | 'light'
+
+type Props = {
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
+}
+
+export default function SettingsPage({ theme, onThemeChange }: Props) {
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('')
@@ -53,15 +60,38 @@ export default function SettingsPage() {
       <div>
         <h2 className="text-lg font-semibold">设置</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-          Embedding API（OpenAI 兼容）。Key 经 Electron safeStorage 加密存储。
+          外观与 Embedding API（OpenAI 兼容）。Key 经 Electron safeStorage 加密存储。
         </p>
+      </div>
+
+      <div className="kd-card flex flex-col gap-3 p-4">
+        <h3 className="text-sm font-medium">外观</h3>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          主题保存在本地设置（ui.theme），默认深色。
+        </p>
+        <div className="kd-seg self-start" role="group" aria-label="主题">
+          <button
+            type="button"
+            aria-pressed={theme === 'dark'}
+            onClick={() => onThemeChange('dark')}
+          >
+            深色
+          </button>
+          <button
+            type="button"
+            aria-pressed={theme === 'light'}
+            onClick={() => onThemeChange('light')}
+          >
+            浅色
+          </button>
+        </div>
       </div>
 
       {!hasKey && (
         <div
           className="rounded-xl px-3 py-2.5 text-sm"
           style={{
-            background: 'rgba(167, 139, 250, 0.1)',
+            background: 'var(--accent-bg)',
             color: 'var(--accent-soft)',
           }}
         >

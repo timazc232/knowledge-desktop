@@ -213,7 +213,10 @@ export function registerIpc(ctx: AppContext): void {
   // --- Settings ---
   ipcMain.handle('settings:get', async () => {
     const embed = getEmbedSettings(db)
+    const themeRaw = getSetting(db, 'ui.theme')
+    const theme = themeRaw === 'light' ? 'light' : 'dark'
     return {
+      theme,
       embed: {
         apiBase: embed.apiBase,
         model: embed.model,
@@ -225,6 +228,9 @@ export function registerIpc(ctx: AppContext): void {
   })
 
   ipcMain.handle('settings:set', async (_e, payload) => {
+    if (payload?.theme === 'light' || payload?.theme === 'dark') {
+      setSetting(db, 'ui.theme', payload.theme)
+    }
     if (payload?.embed) {
       if (typeof payload.embed.apiBase === 'string') {
         setSetting(db, 'embed.apiBase', payload.embed.apiBase)

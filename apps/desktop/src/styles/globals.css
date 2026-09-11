@@ -13,10 +13,41 @@
   --success: #34d399;
   --danger: #f87171;
   --accent-bg: rgba(124, 106, 250, 0.16);
+  --control-bg: rgba(255, 255, 255, 0.06);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --input-focus-bg: #1a1a1d;
+  --input-inset: rgba(255, 255, 255, 0.04);
+  --card-ring: rgba(255, 255, 255, 0.03);
+  --scroll-thumb: rgba(255, 255, 255, 0.08);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.14);
+  --tooltip-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   --radius-xl: 16px;
   --radius-lg: 14px;
   --radius-md: 12px;
   --sidebar-w: 76px;
+}
+
+html[data-theme='light'] {
+  --bg: #f7f7f8;
+  --sidebar: #ffffff;
+  --surface: #f1f1f3;
+  --card: #ffffff;
+  --border: #e4e4e7;
+  --text: #18181b;
+  --text-muted: #71717a;
+  --accent: #7c6afa;
+  --accent-soft: #a78bfa;
+  --success: #059669;
+  --danger: #dc2626;
+  --accent-bg: rgba(124, 106, 250, 0.12);
+  --control-bg: rgba(24, 24, 27, 0.05);
+  --control-bg-hover: rgba(24, 24, 27, 0.09);
+  --input-focus-bg: #ffffff;
+  --input-inset: rgba(24, 24, 27, 0.06);
+  --card-ring: rgba(24, 24, 27, 0.06);
+  --scroll-thumb: rgba(24, 24, 27, 0.12);
+  --scroll-thumb-hover: rgba(24, 24, 27, 0.2);
+  --tooltip-shadow: 0 10px 28px rgba(24, 24, 27, 0.12);
 }
 
 html,
@@ -49,18 +80,18 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--scroll-thumb);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--scroll-thumb-hover);
 }
 
 .kd-card {
   background: var(--card);
   border-radius: var(--radius-xl);
   border: 1px solid transparent;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03);
+  box-shadow: 0 0 0 1px var(--card-ring);
 }
 
 .kd-surface {
@@ -77,15 +108,15 @@ body {
   padding: 0.625rem 0.875rem;
   font-size: 0.875rem;
   outline: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--input-inset);
   transition: box-shadow 0.15s, background 0.15s;
 }
 .kd-input:focus {
-  background: #1a1a1d;
+  background: var(--input-focus-bg);
   box-shadow: inset 0 0 0 1px rgba(124, 106, 250, 0.45);
 }
 .kd-input::placeholder {
-  color: #71717a;
+  color: var(--text-muted);
 }
 
 .kd-btn {
@@ -113,18 +144,18 @@ body {
   filter: brightness(1.08);
 }
 .kd-btn-ghost {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--control-bg);
   color: var(--text);
 }
 .kd-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--control-bg-hover);
 }
 .kd-btn-danger {
-  background: rgba(248, 113, 113, 0.12);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 .kd-btn-danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.2);
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .kd-tooltip {
@@ -144,5 +175,31 @@ body {
   border-radius: 8px;
   z-index: 50;
   pointer-events: none;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--tooltip-shadow);
+  border: 1px solid var(--border);
+}
+
+.kd-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--input-inset);
+}
+.kd-seg button {
+  border: none;
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.kd-seg button[aria-pressed='true'] {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--card-ring);
 }

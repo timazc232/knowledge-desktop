@@ -37,40 +37,41 @@ export function seedBookmarksOnce(db: Db): void {
   ).run()
 }
 
-/** Ensure default bookmark URLs exist as pinned browser_tabs (max 6) when none pinned. */
+/** Seed default pinned browser_tabs whenever none are pinned (ignores stale seeded flag). */
 export function seedPinnedTabsOnce(db: Db): void {
-  const row = db.prepare(`SELECT value FROM settings WHERE key='tabs.pins.seeded'`).get() as
-    | { value: string }
-    | undefined
-  if (row?.value === '1') return
-
   const pinnedCount = (
     db.prepare(`SELECT COUNT(*) AS c FROM browser_tabs WHERE pinned=1`).get() as { c: number }
   ).c
 
-  if (pinnedCount === 0) {
-    const now = Date.now()
-    const insert = db.prepare(
-      `INSERT INTO browser_tabs(id, title, url, favicon, sort_order, active, pinned, sleeping, updated_at)
-       VALUES (?, ?, ?, NULL, ?, 0, 1, 1, ?)`,
-    )
-    const update = db.prepare(
-      `UPDATE browser_tabs SET pinned=1, sort_order=?, title=COALESCE(NULLIF(title, ''), ?), updated_at=? WHERE id=?`,
-    )
-    const findByUrl = db.prepare(`SELECT id FROM browser_tabs WHERE url=? LIMIT 1`)
-
-    const tx = db.transaction(() => {
-      DEFAULT_BOOKMARKS.slice(0, 6).forEach((b, i) => {
-        const existing = findByUrl.get(b.url) as { id: string } | undefined
-        if (existing) {
-          update.run(i, b.title, now, existing.id)
-        } else {
-          insert.run(randomUUID(), b.title, b.url, i, now)
-        }
-      })
-    })
-    tx()
+  if (pinnedCount > 0) {
+    db.prepare(
+      `INSERT INTO settings(key, value) VALUES('tabs.pins.seeded', '1')
+       ON CONFLICT(key) DO UPDATE SET value='1'`,
+    ).run()
+    return
   }
+
+  const now = Date.now()
+  const insert = db.prepare(
+    `INSERT INTO browser_tabs(id, title, url, favicon, sort_order, active, pinned, sleeping, updated_at)
+     VALUES (?, ?, ?, NULL, ?, 0, 1, 1, ?)`,
+  )
+  const update = db.prepare(
+    `UPDATE browser_tabs SET pinned=1, sort_order=?, title=COALESCE(NULLIF(title, ''), ?), updated_at=? WHERE id=?`,
+  )
+  const findByUrl = db.prepare(`SELECT id FROM browser_tabs WHERE url=? LIMIT 1`)
+
+  const tx = db.transaction(() => {
+    DEFAULT_BOOKMARKS.slice(0, 6).forEach((b, i) => {
+      const existing = findByUrl.get(b.url) as { id: string } | undefined
+      if (existing) {
+        update.run(i, b.title, now, existing.id)
+      } else {
+        insert.run(randomUUID(), b.title, b.url, i, now)
+      }
+    })
+  })
+  tx()
 
   db.prepare(
     `INSERT INTO settings(key, value) VALUES('tabs.pins.seeded', '1')

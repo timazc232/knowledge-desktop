@@ -27,16 +27,21 @@ const SLEEP_MS = 5 * 60 * 1000
 const PARTITION = 'persist:workbench'
 export const MAX_SIDEBAR_PINS = 10
 
+const HIDDEN_BOUNDS = { x: 0, y: 0, width: 0, height: 0 }
+
 export class TabManager {
   private live = new Map<string, LiveTab>()
   private bounds = { x: 0, y: 0, width: 800, height: 600 }
   private win: BrowserWindow | null = null
+  /** Only true while Browser page is mounted; keeps WebContentsViews off Library/Settings. */
+  private browserVisible = false
 
   constructor(private db: Db) {}
 
   attachWindow(win: BrowserWindow): void {
     this.win = win
-    // Restore active tab view if any
+    this.browserVisible = false
+    // Restore active tab in background (bounds 0) until Browser page calls showActive
     const active = this.db
       .prepare(`SELECT id FROM browser_tabs WHERE active=1 LIMIT 1`)
       .get() as { id: string } | undefined
@@ -47,6 +52,7 @@ export class TabManager {
 
   setBounds(bounds: { x: number; y: number; width: number; height: number }): void {
     this.bounds = bounds
+    if (!this.browserVisible) return
     for (const [id, live] of this.live) {
       const row = this.getRow(id)
       if (row?.active) {
@@ -178,7 +184,7 @@ export class TabManager {
     await this.wake(id, row.url)
     const live = this.live.get(id)
     if (live) {
-      live.view.setBounds(this.bounds)
+      live.view.setBounds(this.browserVisible ? this.bounds : HIDDEN_BOUNDS)
       live.lastActive = Date.now()
     }
     this.maybeSleepOthers()
@@ -216,14 +222,16 @@ export class TabManager {
     live?.view.webContents.reload()
   }
 
-  /** Hide all browser views (when leaving Browser page) */
+  /** Hide all browser views (when leaving Browser page / before Browser mounts) */
   hideAll(): void {
+    this.browserVisible = false
     for (const live of this.live.values()) {
-      live.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+      live.view.setBounds(HIDDEN_BOUNDS)
     }
   }
 
   showActive(): void {
+    this.browserVisible = true
     const active = this.db
       .prepare(`SELECT id FROM browser_tabs WHERE active=1 LIMIT 1`)
       .get() as { id: string } | undefined
@@ -264,7 +272,7 @@ export class TabManager {
       },
     })
     this.win.contentView.addChildView(view)
-    view.setBounds(this.bounds)
+    view.setBounds(this.browserVisible ? this.bounds : HIDDEN_BOUNDS)
 
     view.webContents.on('page-title-updated', (_e, title) => {
       this.db

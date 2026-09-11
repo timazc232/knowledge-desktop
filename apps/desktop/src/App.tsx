@@ -5,6 +5,7 @@ import SettingsPage from './pages/SettingsPage'
 import Favicon from './components/Favicon'
 
 type Page = 'library' | 'browser' | 'settings'
+type Theme = 'dark' | 'light'
 
 type PinTab = {
   id: string
@@ -20,11 +21,16 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'browser', label: '浏览', icon: '◎' },
 ]
 
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('library')
   const [toast, setToast] = useState<string | null>(null)
   const [pins, setPins] = useState<PinTab[]>([])
   const [activePinId, setActivePinId] = useState<string | null>(null)
+  const [theme, setTheme] = useState<Theme>('dark')
 
   const refreshPins = useCallback(async () => {
     if (!window.api?.tabsListPinned && !window.api?.tabsList) return
@@ -34,6 +40,27 @@ export default function App() {
     setPins(list.filter((t) => t.pinned).slice(0, 10))
     const active = list.find((t) => t.active && t.pinned)
     setActivePinId(active?.id ?? null)
+  }, [])
+
+  const setThemePersist = useCallback(async (next: Theme) => {
+    setTheme(next)
+    applyTheme(next)
+    await window.api?.settingsSet?.({ theme: next })
+  }, [])
+
+  useEffect(() => {
+    // Hide any restored WebContentsViews until Browser page mounts
+    void window.api?.tabsHide?.()
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      if (!window.api?.settingsGet) return
+      const s = await window.api.settingsGet()
+      const t: Theme = s?.theme === 'light' ? 'light' : 'dark'
+      setTheme(t)
+      applyTheme(t)
+    })()
   }, [])
 
   useEffect(() => {
@@ -93,6 +120,7 @@ export default function App() {
         style={{
           width: 'var(--sidebar-w)',
           background: 'var(--sidebar)',
+          borderRight: '1px solid var(--border)',
         }}
       >
         {/* App mark */}
@@ -131,7 +159,7 @@ export default function App() {
           <>
             <div
               className="my-3 h-px w-8"
-              style={{ background: 'rgba(255,255,255,0.08)' }}
+              style={{ background: 'var(--border)' }}
             />
             <div className="flex w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto px-2 pb-2">
               {pins.map((pin) => {
@@ -191,8 +219,20 @@ export default function App() {
 
         {pins.length === 0 && <div className="flex-1" />}
 
-        {/* Bottom: Settings + hint */}
+        {/* Bottom: theme + Settings + hint */}
         <div className="mt-auto flex w-full flex-col items-center gap-2 px-2 pb-1">
+          <button
+            type="button"
+            title={theme === 'dark' ? '切换浅色' : '切换深色'}
+            onClick={() => void setThemePersist(theme === 'dark' ? 'light' : 'dark')}
+            className="flex h-8 w-8 items-center justify-center rounded-xl text-sm transition"
+            style={{
+              background: 'var(--surface)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           <button
             type="button"
             onClick={() => setPage('settings')}
@@ -219,11 +259,18 @@ export default function App() {
       <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'var(--bg)' }}>
         {page === 'library' && <LibraryPage />}
         {page === 'browser' && <BrowserPage onPinsChange={refreshPins} />}
-        {page === 'settings' && <SettingsPage />}
+        {page === 'settings' && (
+          <SettingsPage theme={theme} onThemeChange={(t) => void setThemePersist(t)} />
+        )}
         {toast && (
           <div
             className="absolute bottom-4 right-4 rounded-xl px-3 py-2 text-xs shadow-lg"
-            style={{ background: 'var(--card)', color: 'var(--text)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+            style={{
+              background: 'var(--card)',
+              color: 'var(--text)',
+              boxShadow: 'var(--tooltip-shadow)',
+              border: '1px solid var(--border)',
+            }}
           >
             {toast}
           </div>

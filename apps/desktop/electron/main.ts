@@ -12,6 +12,7 @@ import { IngestQueue } from './ingest/queue'
 import { TabManager } from './browser/TabManager'
 import { registerIpc } from './ipc/register'
 import { seedBookmarksOnce, seedPinnedTabsOnce } from './services/bookmarks'
+import { getSetting } from './services/settings'
 import { createItem } from './services/knowledge'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -23,10 +24,11 @@ let queue: IngestQueue
 let tabs: TabManager
 
 function createWindow() {
+  const theme = getSetting(db, 'ui.theme') === 'light' ? 'light' : 'dark'
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#0b0b0d',
+    backgroundColor: theme === 'light' ? '#F7F7F8' : '#0b0b0d',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -37,6 +39,8 @@ function createWindow() {
 
   mainWindow = win
   tabs.attachWindow(win)
+  // Keep WebContentsViews hidden until Browser page mounts and calls tabsShow
+  tabs.hideAll()
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
