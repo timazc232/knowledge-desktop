@@ -13,7 +13,6 @@ import { TabManager } from './browser/TabManager'
 import { registerIpc } from './ipc/register'
 import { seedBookmarksOnce, seedPinnedTabsOnce } from './services/bookmarks'
 import { getSetting } from './services/settings'
-import { createItem } from './services/knowledge'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -102,20 +101,14 @@ app.whenReady().then(async () => {
     getMainWindow: () => mainWindow,
   })
 
-  // Global clip shortcut
+  // Global clip shortcut: show in-app dialog only (do not auto-save)
   const ok = globalShortcut.register('CommandOrControl+Shift+S', () => {
     const text = clipboard.readText()
     if (!text?.trim()) {
       mainWindow?.webContents.send('clip:showDialog', { text: '', empty: true })
       return
     }
-    const item = createItem(db, { body: text, source_type: 'clipboard' })
-    queue.enqueue(item.id)
-    mainWindow?.webContents.send('clip:showDialog', {
-      text,
-      itemId: item.id,
-      saved: true,
-    })
+    mainWindow?.webContents.send('clip:showDialog', { text })
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
