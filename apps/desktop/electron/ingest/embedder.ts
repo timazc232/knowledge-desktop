@@ -4,6 +4,13 @@ export type EmbedSettings = {
   model: string
 }
 
+function looksLikeChatModel(model: string): boolean {
+  const m = (model || '').toLowerCase()
+  if (!m) return false
+  if (/embed|bge|e5|gte-|text-embedding|embedding/i.test(m)) return false
+  return /chat|flash|instruct|gpt-|claude|qwen.*max|glm-|deepseek|gemini|turbo/i.test(m)
+}
+
 export async function embedTexts(
   texts: string[],
   settings: EmbedSettings,
@@ -31,8 +38,15 @@ export async function embedTexts(
     } else if (res.status === 400 && /empty|input/i.test(body)) {
       hint =
         '。请检查 embedding 接口的 input 格式（单条应为字符串）；并确认模型为 embedding 而非 chat。'
+    } else if (
+      res.status === 400 &&
+      (/invalid|bad.?request|not valid|unknown.?model|model/i.test(body) ||
+        looksLikeChatModel(settings.model))
+    ) {
+      hint =
+        '。请使用 embedding 模型 ID（名称常含 embed / bge / embedding），不要填对话模型（如 glm-*-flash、qwen*-chat）。'
     }
-    throw new Error(`embed HTTP ${res.status}: ${body.slice(0, 300)}${hint}`)
+    throw new Error(`embed HTTP ${res.status}: ${body.slice(0, 180)}${hint}`)
   }
   const json = (await res.json()) as {
     data: { embedding: number[]; index: number }[]

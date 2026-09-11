@@ -243,6 +243,7 @@ export function registerIpc(ctx: AppContext): void {
         hasApiKey: !!embed.apiKey,
         // never return raw key; UI can set new one
         apiKey: embed.apiKey ? '••••••••' : '',
+        lastTestDim: Number(getSetting(db, 'embed.lastTestDim') || 0) || 0,
       },
     }
   })
@@ -301,6 +302,7 @@ export function registerIpc(ctx: AppContext): void {
       }
       return { ok: true, dim }
     } catch (err) {
+      setSetting(db, 'embed.lastTestDim', '0')
       return { ok: false, error: (err as Error).message }
     }
   })
