@@ -46,12 +46,40 @@ export class TabManager {
   attachWindow(win: BrowserWindow): void {
     this.win = win
     this.browserVisible = false
-    // Restore active tab in background (bounds 0) until Browser page calls showActive
+    // Restore session (pinned kept; active or first pinned/first tab) until Browser showActive
+    this.restoreSession()
+  }
+
+  /**
+   * After DB migrate/seed: keep all pinned tabs; if none active, activate first pinned
+   * or first tab. Does not delete or reseed tabs.
+   */
+  restoreSession(): void {
     const active = this.db
       .prepare(`SELECT id FROM browser_tabs WHERE active=1 LIMIT 1`)
       .get() as { id: string } | undefined
     if (active) {
       void this.activate(active.id)
+      return
+    }
+
+    const firstPinned = this.db
+      .prepare(
+        `SELECT id FROM browser_tabs WHERE pinned=1 ORDER BY sort_order ASC, updated_at DESC LIMIT 1`,
+      )
+      .get() as { id: string } | undefined
+    if (firstPinned) {
+      void this.activate(firstPinned.id)
+      return
+    }
+
+    const first = this.db
+      .prepare(
+        `SELECT id FROM browser_tabs ORDER BY pinned DESC, sort_order ASC, updated_at DESC LIMIT 1`,
+      )
+      .get() as { id: string } | undefined
+    if (first) {
+      void this.activate(first.id)
     }
   }
 

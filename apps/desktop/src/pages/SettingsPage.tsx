@@ -13,6 +13,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
   const [model, setModel] = useState('')
   const [hasKey, setHasKey] = useState(false)
   const [msg, setMsg] = useState('')
+  const [embedWarning, setEmbedWarning] = useState('')
   const [testing, setTesting] = useState(false)
 
   useEffect(() => {
@@ -25,15 +26,17 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
   }, [])
 
   async function save() {
-    await window.api.settingsSet({
+    const res = (await window.api.settingsSet({
       embed: {
         apiBase,
         model,
         apiKey: apiKey.startsWith('••') ? undefined : apiKey,
       },
-    })
+    })) as { ok?: boolean; embedWarning?: string }
     setMsg('已保存')
+    setEmbedWarning(res?.embedWarning || '')
     const s = await window.api.settingsGet()
+    setApiBase(s.embed.apiBase)
     setHasKey(!!s.embed.hasApiKey)
     setApiKey(s.embed.apiKey || '')
   }
@@ -41,6 +44,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
   async function test() {
     setTesting(true)
     setMsg('')
+    setEmbedWarning('')
     try {
       await save()
       const res = await window.api.settingsTestEmbedding()
@@ -106,7 +110,12 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             className="kd-input"
             value={apiBase}
             onChange={(e) => setApiBase(e.target.value)}
+            placeholder="https://api.siliconflow.cn/v1"
           />
+          <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+            填写 OpenAI 兼容根路径，例如 https://api.siliconflow.cn/v1（不要带
+            /chat/completions、/completions 或 /embeddings；保存时会自动去掉多余后缀）。
+          </span>
         </label>
         <label className="block space-y-1.5 text-sm">
           <span style={{ color: 'var(--text-muted)' }}>API Key</span>
@@ -124,7 +133,12 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             className="kd-input"
             value={model}
             onChange={(e) => setModel(e.target.value)}
+            placeholder="BAAI/bge-m3"
           />
+          <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
+            使用 Embedding 模型名（如 BAAI/bge-m3），不要填对话模型（如 deepseek-chat /
+            gpt-4o）。
+          </span>
         </label>
 
         <div className="flex flex-wrap gap-2">
@@ -158,6 +172,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             onClick={() =>
               void window.api.backupExport({ kind: 'full' }).then((r) => {
                 setMsg(r.canceled ? '已取消' : `已导出 ${r.itemCount} 条 → ${r.path}`)
+                setEmbedWarning('')
               })
             }
           >
@@ -169,6 +184,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             onClick={() =>
               void window.api.backupExport({ kind: 'text_only' }).then((r) => {
                 setMsg(r.canceled ? '已取消' : `已导出文本 ${r.itemCount} 条`)
+                setEmbedWarning('')
               })
             }
           >
@@ -182,6 +198,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
                 setMsg(
                   r.canceled ? '已取消' : `导入 ${r.imported}，跳过 ${r.skipped}`,
                 )
+                setEmbedWarning('')
               })
             }
           >
@@ -190,8 +207,16 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
         </div>
       </div>
 
+      {embedWarning && (
+        <p className="text-xs" style={{ color: 'var(--accent-soft)' }}>
+          {embedWarning}
+        </p>
+      )}
       {msg && (
-        <p className="text-xs" style={{ color: 'var(--success)' }}>
+        <p
+          className="text-xs"
+          style={{ color: msg.startsWith('失败') ? 'var(--danger)' : 'var(--success)' }}
+        >
           {msg}
         </p>
       )}

@@ -71,6 +71,8 @@ function createWindow() {
   tabs.attachWindow(win)
   // Keep WebContentsViews hidden until Browser page mounts and calls tabsShow
   tabs.hideAll()
+  // Ensure pinned tabs survive restart; activate first pinned/first if no active
+  tabs.restoreSession()
   attachLocalClipShortcut(win)
 
   win.webContents.on('did-finish-load', () => {
