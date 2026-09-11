@@ -15,6 +15,8 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
   const [msg, setMsg] = useState('')
   const [embedWarning, setEmbedWarning] = useState('')
   const [testing, setTesting] = useState(false)
+  const [vectorReady, setVectorReady] = useState(false)
+  const [lastDim, setLastDim] = useState(0)
 
   useEffect(() => {
     void window.api.settingsGet().then((s) => {
@@ -22,6 +24,9 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       setModel(s.embed.model)
       setHasKey(!!s.embed.hasApiKey)
       setApiKey(s.embed.apiKey || '')
+      const dim = Number(s.embed.lastTestDim || 0)
+      setLastDim(dim)
+      setVectorReady(dim > 0)
     })
   }, [])
 
@@ -50,9 +55,13 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       const res = await window.api.settingsTestEmbedding()
       if (res.ok) {
         setMsg(`嵌入成功 · dim=${res.dim}`)
+        setLastDim(Number(res.dim) || 0)
+        setVectorReady(true)
         await window.api.knowledgeRetryEmbed({ allPending: true })
       } else {
         setMsg(`失败: ${res.error}`)
+        setVectorReady(false)
+        setLastDim(0)
       }
     } finally {
       setTesting(false)
@@ -161,6 +170,25 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
             补齐待嵌入
           </button>
         </div>
+        {vectorReady ? (
+          <div
+            className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
+            style={{ background: 'color-mix(in srgb, var(--success) 14%, transparent)', color: 'var(--success)' }}
+          >
+            <span aria-hidden>●</span>
+            <span>嵌入已通 · dim={lastDim}，向量检索可用</span>
+          </div>
+        ) : (
+          <div
+            className="mt-1 rounded-xl px-3 py-2 text-xs"
+            style={{
+              background: 'color-mix(in srgb, #eab308 16%, transparent)',
+              color: '#ca8a04',
+            }}
+          >
+            当前未通过嵌入自检（或网关无 embedding 模型），向量检索暂不可用，全文搜索仍可用。
+          </div>
+        )}
       </div>
 
       <div className="kd-card p-4">
