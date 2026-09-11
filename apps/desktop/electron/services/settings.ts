@@ -58,9 +58,30 @@ export function getSecret(db: Db, key: string): string | null {
   }
 }
 
+/** Strip mistaken OpenAI path suffixes so Base is .../v1 (client appends /embeddings). */
+export function normalizeEmbedApiBase(raw: string): string {
+  let base = (raw || '').trim().replace(/\/+$/, '')
+  let changed = true
+  while (changed && base) {
+    changed = false
+    const lower = base.toLowerCase()
+    // Longer suffixes first so /chat/completions beats /completions
+    for (const suffix of ['/chat/completions', '/completions', '/embeddings'] as const) {
+      if (lower.endsWith(suffix)) {
+        base = base.slice(0, -suffix.length).replace(/\/+$/, '')
+        changed = true
+        break
+      }
+    }
+  }
+  return base
+}
+
 export function getEmbedSettings(db: Db) {
   return {
-    apiBase: getSetting(db, 'embed.apiBase') || 'https://api.siliconflow.cn/v1',
+    apiBase: normalizeEmbedApiBase(
+      getSetting(db, 'embed.apiBase') || 'https://api.siliconflow.cn/v1',
+    ),
     apiKey: getSecret(db, 'embed.apiKey') || '',
     model: getSetting(db, 'embed.model') || 'BAAI/bge-m3',
   }

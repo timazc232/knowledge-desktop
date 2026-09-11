@@ -68,6 +68,7 @@ export default function BrowserPage({
       await refresh()
       const bms = (await window.api.bookmarksList()) as Bookmark[]
       setBookmarks(bms)
+      // Never clear pinned tabs: only create a default tab when the session is empty
       let list = (await window.api.tabsList()) as Tab[]
       if (list.length === 0) {
         await window.api.tabsCreate({ url: 'https://www.google.com' })

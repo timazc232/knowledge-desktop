@@ -20,6 +20,7 @@ import {
   setSetting,
   setSecret,
   getSecret,
+  normalizeEmbedApiBase,
 } from '../services/settings'
 import {
   listBookmarks,
@@ -247,12 +248,19 @@ export function registerIpc(ctx: AppContext): void {
   })
 
   ipcMain.handle('settings:set', async (_e, payload) => {
+    let embedWarning: string | undefined
     if (payload?.theme === 'light' || payload?.theme === 'dark') {
       setSetting(db, 'ui.theme', payload.theme)
     }
     if (payload?.embed) {
       if (typeof payload.embed.apiBase === 'string') {
-        setSetting(db, 'embed.apiBase', payload.embed.apiBase)
+        const raw = payload.embed.apiBase.trim()
+        const normalized = normalizeEmbedApiBase(raw)
+        const rawStripped = raw.replace(/\/+$/, '')
+        if (normalized !== rawStripped) {
+          embedWarning = `已自动规范化 Base 为 ${normalized || '(空)'}（请填写 …/v1，勿带 /chat/completions、/completions 或 /embeddings）`
+        }
+        setSetting(db, 'embed.apiBase', normalized)
       }
       if (typeof payload.embed.model === 'string') {
         setSetting(db, 'embed.model', payload.embed.model)
@@ -261,7 +269,7 @@ export function registerIpc(ctx: AppContext): void {
         setSecret(db, 'embed.apiKey', payload.embed.apiKey)
       }
     }
-    return { ok: true }
+    return embedWarning ? { ok: true, embedWarning } : { ok: true }
   })
 
   ipcMain.handle('settings:testEmbedding', async () => {
