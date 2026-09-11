@@ -166,11 +166,12 @@ export default function App() {
     })
   }, [showToast])
 
+  // Hide native WebContentsView when modal is open (z-index cannot cover it)
+  // or when leaving the browser page.
   useEffect(() => {
-    if (page !== 'browser') {
-      void window.api?.tabsHide?.()
-    }
-  }, [page])
+    if (modalOpen || page !== 'browser') void window.api?.tabsHide?.()
+    else void window.api?.tabsShow?.()
+  }, [modalOpen, page])
 
   // ⌘K / Ctrl+K → focus knowledge search (switch to library if needed)
   // Escape closes modal / pin menu
@@ -429,6 +430,7 @@ export default function App() {
               onPinsChange={refreshPins}
               pinCount={pins.length}
               onToast={showToast}
+              suspendView={modalOpen}
             />
           )}
           {page === 'settings' && (

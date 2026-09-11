@@ -17,6 +17,8 @@ type Props = {
   onPinsChange?: () => void | Promise<void>
   pinCount?: number
   onToast?: (msg: string) => void
+  /** When true, keep WebContentsView hidden (e.g. clip modal open). */
+  suspendView?: boolean
 }
 
 const MAX_PINS = 10
@@ -27,12 +29,19 @@ function shortTitle(t: Tab): string {
   return raw.slice(0, 16) + '…'
 }
 
-export default function BrowserPage({ onPinsChange, pinCount = 0, onToast }: Props) {
+export default function BrowserPage({
+  onPinsChange,
+  pinCount = 0,
+  onToast,
+  suspendView = false,
+}: Props) {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [address, setAddress] = useState('')
   const [pinMsg, setPinMsg] = useState('')
   const viewportRef = useRef<HTMLDivElement>(null)
+  const suspendViewRef = useRef(suspendView)
+  suspendViewRef.current = suspendView
 
   const refresh = useCallback(async () => {
     const list = (await window.api.tabsList()) as Tab[]
@@ -42,6 +51,7 @@ export default function BrowserPage({ onPinsChange, pinCount = 0, onToast }: Pro
   }, [])
 
   const sendBounds = useCallback(() => {
+    if (suspendViewRef.current) return
     const el = viewportRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
@@ -64,8 +74,13 @@ export default function BrowserPage({ onPinsChange, pinCount = 0, onToast }: Pro
         list = (await window.api.tabsList()) as Tab[]
       }
       setTabs(list)
-      void window.api.tabsShow()
-      requestAnimationFrame(() => sendBounds())
+      // Do not show native view while a modal (or other suspend) is active
+      if (suspendViewRef.current) {
+        void window.api.tabsHide()
+      } else {
+        void window.api.tabsShow()
+        requestAnimationFrame(() => sendBounds())
+      }
     })()
 
     const unsub = window.api.onTabUpdated((ev) => {
@@ -89,6 +104,16 @@ export default function BrowserPage({ onPinsChange, pinCount = 0, onToast }: Pro
       void window.api.tabsHide()
     }
   }, [refresh, sendBounds])
+
+  // Suspend / resume WebContentsView when modal opens over browser
+  useEffect(() => {
+    if (suspendView) {
+      void window.api.tabsHide()
+      return
+    }
+    void window.api.tabsShow()
+    requestAnimationFrame(() => sendBounds())
+  }, [suspendView, sendBounds])
 
   useEffect(() => {
     sendBounds()
