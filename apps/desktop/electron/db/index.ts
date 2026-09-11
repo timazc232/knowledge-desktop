@@ -36,6 +36,27 @@ export function migrate(db: Db): void {
   // Strip pure comment-only guidance lines that are not executable? Keep as-is;
   // better-sqlite3 exec ignores line comments.
   db.exec(sql)
+  ensureKnowledgeColumns(db)
+}
+
+/** Add columns introduced after initial schema for existing DBs (CREATE IF NOT EXISTS skips ALTER). */
+function ensureKnowledgeColumns(db: Db): void {
+  const cols = new Set(
+    (db.prepare(`PRAGMA table_info(knowledge_items)`).all() as { name: string }[]).map(
+      (r) => r.name,
+    ),
+  )
+  if (!cols.has('open_count')) {
+    db.exec(`ALTER TABLE knowledge_items ADD COLUMN open_count INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!cols.has('last_opened_at')) {
+    db.exec(`ALTER TABLE knowledge_items ADD COLUMN last_opened_at INTEGER`)
+  }
+  if (!cols.has('home_pin')) {
+    db.exec(`ALTER TABLE knowledge_items ADD COLUMN home_pin INTEGER NOT NULL DEFAULT 0`)
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_items_home_pin ON knowledge_items(home_pin)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_items_open_count ON knowledge_items(open_count DESC)`)
 }
 
 /** FTS retrieval joins via knowledge_items.rowid = fts.rowid (see tech review). */

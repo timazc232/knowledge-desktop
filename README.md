@@ -37,7 +37,8 @@ pnpm --filter @knowledge-desktop/desktop dev
 
 ### 快捷键 / Hotkey
 
-- **Ctrl+Shift+S**（macOS: Cmd+Shift+S）：从系统剪贴板快录入库
+- **Ctrl/Cmd+K**：聚焦知识首页搜索框（在浏览页会先切回知识）
+- **Ctrl+Shift+S**（macOS: Cmd+Shift+S）：从系统剪贴板打开快录 Modal（不离开当前页）；侧栏「快录」同效。全局注册失败时窗口内 `before-input-event` / 渲染进程仍可用。
 
 ### 冒烟 / Smoke
 

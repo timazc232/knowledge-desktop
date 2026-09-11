@@ -10,11 +10,16 @@ interface DesktopApi {
   knowledgeGet: (payload: unknown) => Promise<any>
   knowledgeList: (payload?: unknown) => Promise<any[]>
   knowledgeSearch: (payload: unknown) => Promise<{ items: any[]; mode: string }>
+  knowledgeListTop: (payload?: unknown) => Promise<any[]>
+  knowledgeRecordOpen: (payload: unknown) => Promise<any>
+  knowledgeSetHomePin: (payload: unknown) => Promise<any>
   knowledgeRetryEmbed: (payload: unknown) => Promise<number>
   onIngestProgress: (cb: (ev: unknown) => void) => Unsub
   clipFromSelection: (payload: unknown) => Promise<any>
   clipFromClipboard: () => Promise<any>
+  clipReadText: () => Promise<{ text: string }>
   onClipDialog: (cb: (ev: unknown) => void) => Unsub
+  onClipShortcutStatus: (cb: (ev: unknown) => void) => Unsub
   tabsList: () => Promise<any[]>
   tabsCreate: (payload?: unknown) => Promise<any>
   tabsClose: (payload: unknown) => Promise<any>

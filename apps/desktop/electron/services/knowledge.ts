@@ -17,6 +17,9 @@ export type KnowledgeItem = {
   updated_at: number
   embed_status: string
   embed_error: string | null
+  open_count: number
+  last_opened_at: number | null
+  home_pin: number
 }
 
 export function createItem(
@@ -39,8 +42,8 @@ export function createItem(
   const hash = createHash('sha256').update(body).digest('hex')
   db.prepare(
     `INSERT INTO knowledge_items
-     (id, title, body, source_url, source_type, source_title, tags_json, created_at, updated_at, embed_status, content_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+     (id, title, body, source_url, source_type, source_title, tags_json, created_at, updated_at, embed_status, content_hash, open_count, last_opened_at, home_pin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, NULL, 0)`,
   ).run(
     id,
     title,
@@ -78,6 +81,73 @@ export function listItems(
   sql += ` ORDER BY created_at DESC LIMIT ?`
   params.push(limit)
   return db.prepare(sql).all(...params) as KnowledgeItem[]
+}
+
+/** Top10 for knowledge home: home_pin (1..3) > open_count DESC > last_opened_at DESC > updated_at DESC */
+export function listTop(db: Db, limit = 10): KnowledgeItem[] {
+  const lim = Math.max(1, Math.min(limit, 50))
+  return db
+    .prepare(
+      `SELECT * FROM knowledge_items
+       ORDER BY
+         CASE WHEN home_pin > 0 THEN 0 ELSE 1 END ASC,
+         CASE WHEN home_pin > 0 THEN home_pin ELSE 999 END ASC,
+         open_count DESC,
+         COALESCE(last_opened_at, 0) DESC,
+         updated_at DESC
+       LIMIT ?`,
+    )
+    .all(lim) as KnowledgeItem[]
+}
+
+export function recordOpen(db: Db, id: string): KnowledgeItem | null {
+  const cur = getItem(db, id)
+  if (!cur) return null
+  const now = Date.now()
+  db.prepare(
+    `UPDATE knowledge_items SET open_count = open_count + 1, last_opened_at = ? WHERE id = ?`,
+  ).run(now, id)
+  return getItem(db, id)
+}
+
+/** Set home pin order 1..3, or 0 to unpin. Max 3 pinned; reassigns colliding slots. */
+export function setHomePin(db: Db, id: string, pin: number): KnowledgeItem | null {
+  const cur = getItem(db, id)
+  if (!cur) return null
+  const next = Math.max(0, Math.min(3, Math.floor(pin)))
+  if (next === 0) {
+    db.prepare(`UPDATE knowledge_items SET home_pin = 0, updated_at = ? WHERE id = ?`).run(
+      Date.now(),
+      id,
+    )
+    return getItem(db, id)
+  }
+  // Clear this slot on other items
+  db.prepare(`UPDATE knowledge_items SET home_pin = 0 WHERE home_pin = ? AND id != ?`).run(
+    next,
+    id,
+  )
+  // Enforce max 3: if already 3 distinct pins and this item is unpinned, drop highest pin elsewhere? Spec: max 3.
+  const pinned = db
+    .prepare(`SELECT id FROM knowledge_items WHERE home_pin > 0 AND id != ?`)
+    .all(id) as { id: string }[]
+  if (pinned.length >= 3) {
+    // Remove the one with highest pin number to free a slot
+    const drop = db
+      .prepare(
+        `SELECT id FROM knowledge_items WHERE home_pin > 0 AND id != ? ORDER BY home_pin DESC LIMIT 1`,
+      )
+      .get(id) as { id: string } | undefined
+    if (drop) {
+      db.prepare(`UPDATE knowledge_items SET home_pin = 0 WHERE id = ?`).run(drop.id)
+    }
+  }
+  db.prepare(`UPDATE knowledge_items SET home_pin = ?, updated_at = ? WHERE id = ?`).run(
+    next,
+    Date.now(),
+    id,
+  )
+  return getItem(db, id)
 }
 
 export function updateItem(

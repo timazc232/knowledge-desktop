@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import LibraryPage from './pages/LibraryPage'
+import AllKnowledgePage from './pages/AllKnowledgePage'
 import BrowserPage from './pages/BrowserPage'
 import SettingsPage from './pages/SettingsPage'
 import Favicon from './components/Favicon'
+import KnowledgeEditModal, {
+  parseTags,
+  type KnowledgeEditDraft,
+} from './components/KnowledgeEditModal'
 
-type Page = 'library' | 'browser' | 'settings'
+type Page = 'library' | 'library-all' | 'browser' | 'settings'
 type Theme = 'dark' | 'light'
 
 type PinTab = {
@@ -16,11 +21,7 @@ type PinTab = {
   active: boolean
 }
 
-type CmdResult =
-  | { kind: 'knowledge'; id: string; title: string; snippet: string }
-  | { kind: 'pin'; id: string; title: string; url: string; favicon: string | null }
-
-const NAV: { id: Page; label: string; icon: string }[] = [
+const NAV: { id: 'library' | 'browser'; label: string; icon: string }[] = [
   { id: 'library', label: '知识', icon: '◆' },
   { id: 'browser', label: '浏览', icon: '◎' },
 ]
@@ -33,32 +34,27 @@ function isMod(e: KeyboardEvent) {
   return e.ctrlKey || e.metaKey
 }
 
+function focusKnowledgeSearch() {
+  window.dispatchEvent(new CustomEvent('kd:focus-search'))
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('library')
   const [toast, setToast] = useState<string | null>(null)
   const [pins, setPins] = useState<PinTab[]>([])
   const [activePinId, setActivePinId] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>('dark')
+  const [refreshSignal, setRefreshSignal] = useState(0)
 
-  // Command palette
-  const [cmdOpen, setCmdOpen] = useState(false)
-  const [cmdQuery, setCmdQuery] = useState('')
-  const [cmdResults, setCmdResults] = useState<CmdResult[]>([])
-  const [cmdIndex, setCmdIndex] = useState(0)
-  const [cmdLoading, setCmdLoading] = useState(false)
-  const cmdInputRef = useRef<HTMLInputElement>(null)
-  const cmdDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Clip modal
-  const [clipOpen, setClipOpen] = useState(false)
-  const [clipText, setClipText] = useState('')
-  const [clipTitle, setClipTitle] = useState('')
-  const [clipSaving, setClipSaving] = useState(false)
-  const clipBodyRef = useRef<HTMLTextAreaElement>(null)
-
-  // Library bridges
-  const [openItemId, setOpenItemId] = useState<string | null>(null)
-  const [expandComposeSignal, setExpandComposeSignal] = useState(0)
+  // Shared knowledge edit / clip modal (works on any page, incl. browser)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalDraft, setModalDraft] = useState<KnowledgeEditDraft>({
+    title: '',
+    body: '',
+    tags: '',
+  })
+  const [modalHeading, setModalHeading] = useState('快速录入')
+  const [modalSaving, setModalSaving] = useState(false)
 
   // Pin context menu
   const [pinMenu, setPinMenu] = useState<{ id: string; x: number; y: number } | null>(null)
@@ -83,6 +79,36 @@ export default function App() {
     applyTheme(next)
     await window.api?.settingsSet?.({ theme: next })
   }, [])
+
+  const openClipModal = useCallback(
+    async (prefill?: { text?: string; title?: string; empty?: boolean }) => {
+      if (prefill?.empty) {
+        showToast('剪贴板为空')
+        return
+      }
+      let text = prefill?.text
+      if (text === undefined) {
+        try {
+          const res = await window.api?.clipReadText?.()
+          text = res?.text ?? ''
+        } catch {
+          text = ''
+        }
+      }
+      if (!text?.trim()) {
+        showToast('剪贴板为空')
+        return
+      }
+      setModalDraft({
+        title: prefill?.title || '',
+        body: text,
+        tags: '',
+      })
+      setModalHeading('快速录入')
+      setModalOpen(true)
+    },
+    [showToast],
+  )
 
   useEffect(() => {
     void window.api?.tabsHide?.()
@@ -109,25 +135,33 @@ export default function App() {
     })
   }, [refreshPins])
 
-  // Clip: show floating modal, do not auto-save / navigate
+  // Clip dialog from main (globalShortcut / before-input / context-menu)
   useEffect(() => {
     if (!window.api?.onClipDialog) return
     return window.api.onClipDialog((ev) => {
-      const e = ev as { saved?: boolean; empty?: boolean; text?: string; itemId?: string }
+      const e = ev as { saved?: boolean; empty?: boolean; text?: string; title?: string }
       if (e.empty) {
         showToast('剪贴板为空')
         return
       }
       if (e.saved) {
-        // legacy path — ignore auto-saved; prefer modal
-        showToast(`已从剪贴板入库 ${e.itemId?.slice(0, 8) ?? ''}…`)
+        showToast('已入库')
+        setRefreshSignal((n) => n + 1)
         return
       }
       if (typeof e.text === 'string') {
-        setClipText(e.text)
-        setClipTitle('')
-        setClipOpen(true)
-        requestAnimationFrame(() => clipBodyRef.current?.focus())
+        void openClipModal({ text: e.text, title: e.title })
+      }
+    })
+  }, [showToast, openClipModal])
+
+  // Toast if global shortcut registration failed
+  useEffect(() => {
+    if (!window.api?.onClipShortcutStatus) return
+    return window.api.onClipShortcutStatus((ev) => {
+      const e = ev as { registered?: boolean; message?: string }
+      if (e.registered === false) {
+        showToast(e.message || '全局快录快捷键注册失败，窗口内仍可用')
       }
     })
   }, [showToast])
@@ -138,36 +172,33 @@ export default function App() {
     }
   }, [page])
 
-  // Global shortcuts: Ctrl/Cmd+K command bar, Ctrl/Cmd+N compose
+  // ⌘K / Ctrl+K → focus knowledge search (switch to library if needed)
+  // Escape closes modal / pin menu
+  // Renderer-local Ctrl+Shift+S as extra fallback
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (isMod(e) && (e.key === 'k' || e.key === 'K')) {
+      if (isMod(e) && (e.key === 'k' || e.key === 'K') && !e.shiftKey) {
         e.preventDefault()
-        setCmdOpen(true)
-        setCmdQuery('')
-        setCmdResults([])
-        setCmdIndex(0)
-        requestAnimationFrame(() => cmdInputRef.current?.focus())
+        if (page !== 'library' && page !== 'library-all') {
+          setPage('library')
+          requestAnimationFrame(() => focusKnowledgeSearch())
+        } else if (page === 'library-all') {
+          setPage('library')
+          requestAnimationFrame(() => focusKnowledgeSearch())
+        } else {
+          focusKnowledgeSearch()
+        }
         return
       }
-      if (isMod(e) && (e.key === 'n' || e.key === 'N') && !e.shiftKey) {
-        // Don't steal when typing in inputs other than our overlays
-        const tag = (e.target as HTMLElement)?.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) {
-          if (!cmdOpen && !clipOpen) return
-        }
+      if (isMod(e) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        // Local fallback when before-input / globalShortcut miss (e.g. some focus states)
         e.preventDefault()
-        setPage('library')
-        setExpandComposeSignal((n) => n + 1)
+        void openClipModal()
         return
       }
       if (e.key === 'Escape') {
-        if (cmdOpen) {
-          setCmdOpen(false)
-          return
-        }
-        if (clipOpen && !clipSaving) {
-          setClipOpen(false)
+        if (modalOpen && !modalSaving) {
+          setModalOpen(false)
           return
         }
         if (pinMenu) {
@@ -177,96 +208,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cmdOpen, clipOpen, clipSaving, pinMenu])
-
-  // Command bar search
-  useEffect(() => {
-    if (!cmdOpen) return
-    if (cmdDebounceRef.current) clearTimeout(cmdDebounceRef.current)
-    const q = cmdQuery.trim()
-    cmdDebounceRef.current = setTimeout(() => {
-      void (async () => {
-        setCmdLoading(true)
-        try {
-          const results: CmdResult[] = []
-          const qLower = q.toLowerCase()
-
-          // Match pins by title / url / domain
-          if (q) {
-            for (const pin of pins) {
-              const title = (pin.title || '').toLowerCase()
-              const url = (pin.url || '').toLowerCase()
-              let host = ''
-              try {
-                host = new URL(pin.url).hostname.toLowerCase()
-              } catch {
-                /* ignore */
-              }
-              if (
-                title.includes(qLower) ||
-                url.includes(qLower) ||
-                host.includes(qLower)
-              ) {
-                results.push({
-                  kind: 'pin',
-                  id: pin.id,
-                  title: pin.title || pin.url,
-                  url: pin.url,
-                  favicon: pin.favicon,
-                })
-              }
-            }
-          } else {
-            for (const pin of pins.slice(0, 5)) {
-              results.push({
-                kind: 'pin',
-                id: pin.id,
-                title: pin.title || pin.url,
-                url: pin.url,
-                favicon: pin.favicon,
-              })
-            }
-          }
-
-          if (q) {
-            const res = await window.api.knowledgeSearch({ query: q, topK: 12 })
-            for (const h of res.items) {
-              results.push({
-                kind: 'knowledge',
-                id: h.id,
-                title: h.title || '无标题',
-                snippet: h.snippet || '',
-              })
-            }
-          } else {
-            const list = (await window.api.knowledgeList({ limit: 8 })) as {
-              id: string
-              title: string | null
-              body: string
-            }[]
-            for (const it of list) {
-              results.push({
-                kind: 'knowledge',
-                id: it.id,
-                title: it.title || '无标题',
-                snippet: (it.body || '').slice(0, 80),
-              })
-            }
-          }
-
-          setCmdResults(results)
-          setCmdIndex(0)
-        } catch {
-          setCmdResults([])
-        } finally {
-          setCmdLoading(false)
-        }
-      })()
-    }, 180)
-    return () => {
-      if (cmdDebounceRef.current) clearTimeout(cmdDebounceRef.current)
-    }
-  }, [cmdQuery, cmdOpen, pins])
+  }, [page, modalOpen, modalSaving, pinMenu, openClipModal])
 
   async function openPin(pin: PinTab) {
     setPage('browser')
@@ -286,50 +228,51 @@ export default function App() {
     await refreshPins()
   }
 
-  async function runCmdResult(r: CmdResult) {
-    setCmdOpen(false)
-    setCmdQuery('')
-    if (r.kind === 'pin') {
-      await openPin({
-        id: r.id,
-        title: r.title,
-        url: r.url,
-        favicon: r.favicon,
-        pinned: true,
-        active: true,
-      })
-      return
-    }
-    setPage('library')
-    setOpenItemId(r.id)
-  }
-
-  async function saveClip() {
-    if (!clipText.trim()) {
+  async function saveModal() {
+    if (!modalDraft.body.trim()) {
       showToast('内容为空')
       return
     }
-    setClipSaving(true)
+    setModalSaving(true)
     try {
-      const item = await window.api.clipFromSelection({
-        text: clipText,
-        title: clipTitle.trim() || undefined,
-      })
-      setClipOpen(false)
-      setClipText('')
-      setClipTitle('')
-      showToast(`已快录 ${(item as { id?: string }).id?.slice(0, 8) ?? ''}…`)
+      const tags = parseTags(modalDraft.tags)
+      if (modalDraft.id) {
+        await window.api.knowledgeUpdate({
+          id: modalDraft.id,
+          title: modalDraft.title.trim() || undefined,
+          body: modalDraft.body,
+          tags,
+        })
+        showToast('已更新')
+      } else {
+        // Prefer clip API when heading is 快速录入 to keep source_type
+        if (modalHeading === '快速录入') {
+          const item = await window.api.clipFromSelection({
+            text: modalDraft.body,
+            title: modalDraft.title.trim() || undefined,
+          })
+          showToast(`已快录 ${(item as { id?: string }).id?.slice(0, 8) ?? ''}…`)
+        } else {
+          await window.api.knowledgeCreate({
+            title: modalDraft.title.trim() || undefined,
+            body: modalDraft.body,
+            source_type: 'manual',
+            tags,
+          })
+          showToast('已保存')
+        }
+      }
+      setModalOpen(false)
+      setModalDraft({ title: '', body: '', tags: '' })
+      setRefreshSignal((n) => n + 1)
     } catch (err) {
-      showToast(`快录失败: ${(err as Error).message || String(err)}`)
+      showToast(`保存失败: ${(err as Error).message || String(err)}`)
     } finally {
-      setClipSaving(false)
+      setModalSaving(false)
     }
   }
 
-  const cmdHint = useMemo(
-    () => (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'),
-    [],
-  )
+  const knowledgeActive = page === 'library' || page === 'library-all'
 
   return (
     <div className="flex h-full" style={{ background: 'var(--bg)' }}>
@@ -351,7 +294,7 @@ export default function App() {
 
         <nav className="flex w-full flex-col items-center gap-1 px-2">
           {NAV.map((n) => {
-            const on = page === n.id
+            const on = n.id === 'library' ? knowledgeActive : page === n.id
             return (
               <div key={n.id} className="kd-tooltip w-full" data-tip={n.label}>
                 <button
@@ -449,52 +392,36 @@ export default function App() {
               <span className="text-[9px] font-medium opacity-70">设置</span>
             </button>
           </div>
-          <p
-            className="px-1 text-center text-[9px] leading-tight"
-            style={{ color: 'var(--text-muted)', opacity: 0.55 }}
+          <button
+            type="button"
+            title="从剪贴板快录 (Ctrl+Shift+S)"
+            onClick={() => void openClipModal()}
+            className="rounded-xl px-1 py-1.5 text-center transition hover:brightness-110"
+            style={{ color: 'var(--text-muted)' }}
           >
-            ⌃⇧S
-            <br />
-            快录
-          </p>
+            <p className="text-[9px] leading-tight opacity-80">
+              ⌃⇧S
+              <br />
+              <span style={{ color: 'var(--accent-soft)' }}>快录</span>
+            </p>
+          </button>
         </div>
       </aside>
 
       <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: 'var(--bg)' }}>
-        {/* Top command trigger bar */}
-        <div
-          className="flex items-center gap-2 border-b px-4 py-2"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setCmdOpen(true)
-              setCmdQuery('')
-              setCmdResults([])
-              setCmdIndex(0)
-              requestAnimationFrame(() => cmdInputRef.current?.focus())
-            }}
-            className="kd-input flex flex-1 items-center gap-2 !py-2 text-left text-sm"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <span className="opacity-70">⌕</span>
-            <span className="flex-1">搜索知识或钉选…</span>
-            <kbd
-              className="rounded px-1.5 py-0.5 text-[10px]"
-              style={{ background: 'var(--control-bg)', color: 'var(--text-muted)' }}
-            >
-              {cmdHint}
-            </kbd>
-          </button>
-        </div>
-
-        <div className="h-[calc(100%-49px)] overflow-hidden">
+        <div className="h-full overflow-hidden">
           {page === 'library' && (
             <LibraryPage
-              openItemId={openItemId}
-              onOpenItemConsumed={() => setOpenItemId(null)}
-              expandComposeSignal={expandComposeSignal}
+              refreshSignal={refreshSignal}
+              onToast={showToast}
+              onGoAll={() => setPage('library-all')}
+            />
+          )}
+          {page === 'library-all' && (
+            <AllKnowledgePage
+              onBack={() => setPage('library')}
+              onToast={showToast}
+              refreshSignal={refreshSignal}
             />
           )}
           {page === 'browser' && (
@@ -509,158 +436,18 @@ export default function App() {
           )}
         </div>
 
-        {/* Command palette overlay */}
-        {cmdOpen && (
-          <div
-            className="absolute inset-0 z-40 flex items-start justify-center bg-black/45 pt-[12vh] backdrop-blur-[2px]"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setCmdOpen(false)
-            }}
-          >
-            <div
-              className="kd-card w-full max-w-xl overflow-hidden shadow-2xl"
-              style={{ border: '1px solid var(--border)' }}
-            >
-              <div className="flex items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>⌕</span>
-                <input
-                  ref={cmdInputRef}
-                  className="flex-1 bg-transparent py-3.5 text-sm outline-none"
-                  style={{ color: 'var(--text)' }}
-                  placeholder="搜索知识 / 钉选标题或域名…"
-                  value={cmdQuery}
-                  onChange={(e) => setCmdQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setCmdIndex((i) => Math.min(i + 1, Math.max(cmdResults.length - 1, 0)))
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setCmdIndex((i) => Math.max(i - 1, 0))
-                    } else if (e.key === 'Enter') {
-                      e.preventDefault()
-                      const r = cmdResults[cmdIndex] ?? cmdResults[0]
-                      if (r) void runCmdResult(r)
-                    } else if (e.key === 'Escape') {
-                      e.preventDefault()
-                      setCmdOpen(false)
-                    }
-                  }}
-                />
-                {cmdLoading && (
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    …
-                  </span>
-                )}
-              </div>
-              <ul className="max-h-[min(420px,50vh)] overflow-auto py-1">
-                {cmdResults.map((r, i) => {
-                  const selected = i === cmdIndex
-                  return (
-                    <li key={`${r.kind}-${r.id}`}>
-                      <button
-                        type="button"
-                        className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition"
-                        style={{
-                          background: selected ? 'var(--accent-bg)' : 'transparent',
-                          color: 'var(--text)',
-                        }}
-                        onMouseEnter={() => setCmdIndex(i)}
-                        onClick={() => void runCmdResult(r)}
-                      >
-                        {r.kind === 'pin' ? (
-                          <Favicon url={r.url} favicon={r.favicon} title={r.title} size={18} />
-                        ) : (
-                          <span
-                            className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-[10px]"
-                            style={{ background: 'var(--surface)', color: 'var(--accent-soft)' }}
-                          >
-                            ◆
-                          </span>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium">{r.title}</span>
-                            <span
-                              className="shrink-0 text-[10px]"
-                              style={{ color: 'var(--text-muted)' }}
-                            >
-                              {r.kind === 'pin' ? '钉选' : '知识'}
-                            </span>
-                          </div>
-                          <p
-                            className="mt-0.5 truncate text-xs"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
-                            {r.kind === 'pin' ? r.url : r.snippet}
-                          </p>
-                        </div>
-                      </button>
-                    </li>
-                  )
-                })}
-                {!cmdLoading && cmdResults.length === 0 && (
-                  <li className="px-4 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {cmdQuery.trim() ? '无匹配结果' : '输入关键词搜索知识或钉选'}
-                  </li>
-                )}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* Clip capture modal — stays on current page */}
-        {clipOpen && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-[2px]">
-            <div
-              className="kd-card flex w-full max-w-md flex-col gap-3 p-5 shadow-2xl"
-              style={{ border: '1px solid var(--border)' }}
-            >
-              <h3 className="text-sm font-semibold">快速录入</h3>
-              <input
-                className="kd-input"
-                placeholder="标题（可选）"
-                value={clipTitle}
-                onChange={(e) => setClipTitle(e.target.value)}
-              />
-              <textarea
-                ref={clipBodyRef}
-                className="kd-input min-h-[160px] resize-y leading-relaxed"
-                placeholder="剪贴板内容…"
-                value={clipText}
-                onChange={(e) => setClipText(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                    e.preventDefault()
-                    void saveClip()
-                  }
-                }}
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="kd-btn kd-btn-ghost"
-                  disabled={clipSaving}
-                  onClick={() => {
-                    setClipOpen(false)
-                    setClipText('')
-                    setClipTitle('')
-                  }}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="kd-btn kd-btn-primary"
-                  disabled={clipSaving}
-                  onClick={() => void saveClip()}
-                >
-                  {clipSaving ? '保存中…' : '保存'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Shared clip / quick-capture modal — stays on current page (incl. browser) */}
+        <KnowledgeEditModal
+          open={modalOpen}
+          draft={modalDraft}
+          saving={modalSaving}
+          heading={modalHeading}
+          onChange={setModalDraft}
+          onSave={() => void saveModal()}
+          onCancel={() => {
+            if (!modalSaving) setModalOpen(false)
+          }}
+        />
 
         {/* Pin context menu */}
         {pinMenu && (
