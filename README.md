@@ -1,5 +1,20 @@
 # Knowledge Desktop（桌面知识库工作台）
 
+## 下载安装
+
+最新 Windows 安装包见 [Releases](https://github.com/timazc232/knowledge-desktop/releases)（`*-setup.exe`）。
+
+开发者本地打 Win 包：
+
+```bash
+pnpm i
+pnpm --filter @knowledge-desktop/desktop build:win
+# 产物：apps/desktop/dist/Knowledge Desktop-<version>-setup.exe
+```
+
+打 tag 会触发 CI 自动上传 Release；也可在 Actions 里手动跑 `Release Windows`。
+
+
 本地优先的 **知识库 + 内置浏览器工作台**（路线 A，MIT）。MVP core（PR #17）已合并。
 
 Local-first **knowledge base + in-app browser workbench**. MIT.
