@@ -15,7 +15,11 @@ type Bookmark = { id: string; title: string; url: string }
 
 type Props = {
   onPinsChange?: () => void | Promise<void>
+  pinCount?: number
+  onToast?: (msg: string) => void
 }
+
+const MAX_PINS = 10
 
 function shortTitle(t: Tab): string {
   const raw = (t.title || t.url || '').trim()
@@ -23,7 +27,7 @@ function shortTitle(t: Tab): string {
   return raw.slice(0, 16) + '…'
 }
 
-export default function BrowserPage({ onPinsChange }: Props) {
+export default function BrowserPage({ onPinsChange, pinCount = 0, onToast }: Props) {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [address, setAddress] = useState('')
@@ -91,6 +95,8 @@ export default function BrowserPage({ onPinsChange }: Props) {
   }, [tabs, sendBounds])
 
   const active = tabs.find((t) => t.active)
+  const pinnedCount =
+    pinCount > 0 ? pinCount : tabs.filter((t) => t.pinned).length
 
   async function activate(id: string) {
     await window.api.tabsActivate({ id })
@@ -105,9 +111,18 @@ export default function BrowserPage({ onPinsChange }: Props) {
   }
 
   async function togglePin(tab: Tab) {
+    if (!tab.pinned && pinnedCount >= MAX_PINS) {
+      const msg = '最多钉选 10 个'
+      setPinMsg(msg)
+      onToast?.(msg)
+      setTimeout(() => setPinMsg(''), 2500)
+      return
+    }
     const res = await window.api.tabsSetPinned({ id: tab.id, pinned: !tab.pinned })
     if (!res.ok) {
-      setPinMsg(res.error || '钉选失败')
+      const msg = res.error || '钉选失败'
+      setPinMsg(msg)
+      onToast?.(msg)
       setTimeout(() => setPinMsg(''), 2500)
       return
     }
@@ -188,7 +203,7 @@ export default function BrowserPage({ onPinsChange }: Props) {
                   }
                 }}
               >
-                📌
+                ★
               </span>
               <span
                 role="button"
@@ -259,13 +274,19 @@ export default function BrowserPage({ onPinsChange }: Props) {
         {active && (
           <button
             type="button"
-            className="kd-btn kd-btn-ghost whitespace-nowrap text-xs"
+            title={active.pinned ? '取消钉选' : '钉到侧栏'}
+            className="kd-btn kd-btn-ghost flex items-center gap-1.5 whitespace-nowrap !px-2.5 !py-1.5 text-xs"
             style={{
               color: active.pinned ? 'var(--accent-soft)' : undefined,
             }}
             onClick={() => void togglePin(active)}
           >
-            {active.pinned ? '已钉选' : '钉到侧栏'}
+            <span style={{ fontSize: '14px', lineHeight: 1 }}>
+              {active.pinned ? '★' : '☆'}
+            </span>
+            <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+              {pinnedCount}/{MAX_PINS}
+            </span>
           </button>
         )}
         {pinMsg && (
