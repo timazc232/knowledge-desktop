@@ -134,6 +134,7 @@ export default function LibraryPage({
 
   // Search while typing
   useEffect(() => {
+    let cancelled = false
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const q = query.trim()
     if (!q) {
@@ -146,6 +147,7 @@ export default function LibraryPage({
       void (async () => {
         try {
           const res = await window.api.knowledgeSearch({ query: q, topK: 20 })
+          if (cancelled) return
           setSearchHits(
             res.items.map((h: any) => ({
               id: h.id,
@@ -155,13 +157,14 @@ export default function LibraryPage({
             })),
           )
         } catch {
-          setSearchHits([])
+          if (!cancelled) setSearchHits([])
         } finally {
-          setSearchLoading(false)
+          if (!cancelled) setSearchLoading(false)
         }
       })()
-    }, 180)
+    }, 300)
     return () => {
+      cancelled = true
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [query])
@@ -303,7 +306,7 @@ export default function LibraryPage({
           </span>
           <input
             ref={searchRef}
-            className="kd-input w-full !py-2.5 pl-9 pr-16 text-sm"
+            className="kd-input kd-search-input w-full !py-2.5 text-sm"
             placeholder="搜索知识…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

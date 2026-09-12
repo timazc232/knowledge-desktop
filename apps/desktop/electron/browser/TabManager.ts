@@ -201,7 +201,7 @@ export class TabManager {
     return true
   }
 
-  async activate(id: string): Promise<TabDto | null> {
+  activate(id: string): TabDto | null {
     const row = this.getRow(id)
     if (!row) return null
     this.db.prepare(`UPDATE browser_tabs SET active=0`).run()
@@ -214,7 +214,9 @@ export class TabManager {
         live.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
       }
     }
-    await this.wake(id, row.url)
+    // Create/show the WebContentsView immediately. Waiting for navigation here
+    // makes tab switching feel frozen on slow pages or offline networks.
+    void this.wake(id, row.url)
     const live = this.live.get(id)
     if (live) {
       live.view.setBounds(this.browserVisible ? this.bounds : HIDDEN_BOUNDS)

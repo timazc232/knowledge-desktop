@@ -119,6 +119,13 @@ body {
   color: var(--text-muted);
 }
 
+/* .kd-input is declared after Tailwind utilities, so search-specific padding
+   must live here instead of relying on pl-/pr- utility classes. */
+.kd-search-input {
+  padding-left: 2.25rem;
+  padding-right: 4rem;
+}
+
 .kd-btn {
   display: inline-flex;
   align-items: center;

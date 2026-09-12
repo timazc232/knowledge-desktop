@@ -95,7 +95,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
       <div>
         <h2 className="text-lg font-semibold">设置</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-          外观与 Embedding。支持 OpenAI 兼容网关或 Hugging Face Inference。Key 经
+          外观与 Embedding。支持 OpenAI 兼容网关或 Hugging Face Inference。Token 经
           Electron safeStorage 加密存储。
         </p>
       </div>
@@ -169,7 +169,7 @@ export default function SettingsPage({ theme, onThemeChange }: Props) {
           />
           <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>
             {provider === 'huggingface'
-              ? 'Hugging Face 使用固定推理路由（feature-extraction），无需改 Base。'
+              ? 'Hugging Face 使用 feature-extraction 推理路由，无需改 Base。Read Token 即可。'
               : '填写 OpenAI 兼容根路径，例如 https://api.siliconflow.cn/v1（不要带 /chat/completions）。'}
           </span>
         </label>
